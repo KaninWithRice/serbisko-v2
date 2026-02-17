@@ -18,7 +18,6 @@ Route::get('/', function () {
         if (session('user_role') === 'admin') {
             return redirect('/admin/dashboard');
         }
-        // If student, go to the first step of enrollment
         return redirect('/student/grade-selection');
     }
     return view('login');
@@ -38,42 +37,93 @@ Route::get('/admin/dashboard', function () {
     if (!session()->has('user_id') || session('user_role') !== 'admin') {
         return redirect('/');
     }
-    
     return view('admin.dashboard');
 });
 
 
-// --- 3. STUDENT ROUTES (Protected) ---
+// --- 3. STUDENT ENROLLMENT FLOW (Protected) ---
 
-// STEP 1: Grade Selection Screen
+// STEP 1: Grade Selection (Grade 11 or 12)
 Route::get('/student/grade-selection', function () {
     if (!session()->has('user_id')) return redirect('/');
-    
     return view('student.selection');
 });
 
-// STEP 1-B: Handle Grade Selection (Save & Redirect)
 Route::post('/student/save-grade', function (Request $request) {
-    // Save the selected grade to the session
     session(['grade_level' => $request->input('grade_level')]);
-    
-    // Redirect to the next step (Status Selection)
     return redirect('/student/status-selection');
 });
 
-// STEP 2: Status Selection Screen
+// STEP 2: Student Status (Regular, Transferee, etc.)
 Route::get('/student/status-selection', function () {
     if (!session()->has('user_id')) return redirect('/');
-    
     return view('student.status');
 });
 
-// STEP 2-B: Handle Status Selection (Save & Debug)
 Route::post('/student/save-status', function (Request $request) {
-    // Save the selected status to the session
     session(['student_status' => $request->input('student_status')]);
+    return redirect('/student/track-selection');
+});
+
+// STEP 3: Track Selection (Academic vs TechPro)
+Route::get('/student/track-selection', function () {
+    if (!session()->has('user_id')) return redirect('/');
+    return view('student.track');
+});
+
+Route::post('/student/save-track', function (Request $request) {
+    session(['track' => $request->input('track')]);
+    return redirect('/student/cluster-selection');
+});
+
+// STEP 4: Cluster Selection (Dynamic based on Track)
+Route::get('/student/cluster-selection', function () {
+    if (!session()->has('user_id')) return redirect('/');
+    return view('student.cluster');
+});
+
+Route::post('/student/save-cluster', function (Request $request) {
+    session(['cluster' => $request->input('cluster')]);
+    // Redirect to the Checklist Page
+    return redirect('/student/checklist');
+});
+
+// STEP 5: Documents Checklist
+Route::get('/student/checklist', function () {
+    if (!session()->has('user_id')) return redirect('/');
+    return view('student.checklist');
+});
+
+Route::post('/student/save-checklist', function (Request $request) {
+    // Set the first document to capture (e.g., Report Card)
+    session(['current_doc' => 'Report Card (SF9)']);
     
-    // TEMPORARY: Dump the session data so you can verify it works
-    // We will replace this with a redirect to the next page later
-    dd(session()->all());
+    // Redirect to the Camera Capture Page
+    return redirect('/student/capture-document');
+});
+
+// STEP 6: Capture Document UI (Camera)
+Route::get('/student/capture-document', function () {
+    if (!session()->has('user_id')) return redirect('/');
+    return view('student.capture');
+});
+
+Route::post('/student/save-image', function (Request $request) {
+    // Here is where you would save the base64 image to storage
+    // $imageData = $request->input('image_data');
+    
+    // After capturing, go to Verification
+    return redirect('/student/verifying');
+});
+
+// STEP 7: Verification / Loading Screen
+Route::get('/student/verifying', function () {
+    if (!session()->has('user_id')) return redirect('/');
+    return view('student.loading');
+});
+
+// FINAL STEP: Student Dashboard (Post-Verification)
+Route::get('/student/dashboard', function () {
+    if (!session()->has('user_id')) return redirect('/');
+    return "<h1>Enrollment Data Saved! Welcome to your Dashboard.</h1>";
 });

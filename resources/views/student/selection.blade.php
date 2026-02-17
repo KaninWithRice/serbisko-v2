@@ -30,11 +30,17 @@
         </p>
     </div>
 
-    <form action="{{ url('/student/save-grade') }}" method="POST" class="w-full max-w-4xl">
-        @csrf <div class="flex flex-col md:flex-row justify-center gap-8 mb-12">
+    <form id="gradeForm" action="{{ url('/student/save-grade') }}" method="POST" class="w-full max-w-4xl">
+        @csrf
+        
+        <div id="error-msg" class="hidden text-red-600 font-bold text-center mb-4 bg-red-100 p-3 rounded-lg mx-auto max-w-md">
+            ⚠️ Please select a grade level to continue.
+        </div>
+
+        <div class="flex flex-col md:flex-row justify-center gap-8 mb-12">
             
             <label class="cursor-pointer group">
-                <input type="radio" name="grade_level" value="11" class="peer sr-only" required>
+                <input type="radio" name="grade_level" value="11" class="peer sr-only">
                 <div class="w-64 h-64 bg-gray-100 rounded-3xl border-4 border-transparent peer-checked:border-blue-900 peer-checked:bg-white shadow-lg flex items-center justify-center transition-all transform hover:-translate-y-2">
                     <span class="text-3xl font-bold text-gray-400 peer-checked:text-blue-900 group-hover:text-gray-600">
                         Grade 11
@@ -54,11 +60,33 @@
         </div>
 
         <div class="flex justify-center">
-            <button type="submit" class="bg-blue-900 text-white font-bold text-lg px-16 py-4 rounded-full shadow-lg hover:bg-blue-800 transition transform hover:scale-105">
+            <button type="button" onclick="validateAndSubmit()" class="bg-blue-900 text-white font-bold text-lg px-16 py-4 rounded-full shadow-lg hover:bg-blue-800 transition transform hover:scale-105">
                 NEXT
             </button>
         </div>
     </form>
+
+    <script>
+        function validateAndSubmit() {
+            var radios = document.getElementsByName('grade_level');
+            var formValid = false;
+            var i = 0;
+            
+            // Check if at least one radio is selected
+            while (!formValid && i < radios.length) {
+                if (radios[i].checked) formValid = true;
+                i++;
+            }
+
+            if (!formValid) {
+                // Show error message if nothing selected
+                document.getElementById('error-msg').classList.remove('hidden');
+            } else {
+                // Submit the form manually
+                document.getElementById('gradeForm').submit();
+            }
+        }
+    </script>
 
 </body>
 </html>
