@@ -10,31 +10,16 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-        {
-            Schema::create('users', function (Blueprint $table) {
-                $table->id(); // Internal Unique ID
-                
-                // Name Fields
-                $table->string('first_name')->index(); 
-                $table->string('last_name')->index();
-                $table->string('middle_name')->nullable();
-                
-                // Login Identifiers
-                $table->date('birthday')->index(); 
-                $table->string('password'); // This will store the hashed LRN or Temp ID
-                
-                // Access Control
-                $table->enum('role', ['admin', 'teacher', 'student'])->default('student');
-                
-                $table->timestamps(); // created_at and updated_at
-            });
-
+    {
+        if (!Schema::hasTable('password_reset_tokens')) {
             Schema::create('password_reset_tokens', function (Blueprint $table) {
                 $table->string('email')->primary();
                 $table->string('token');
                 $table->timestamp('created_at')->nullable();
             });
+        }
 
+        if (!Schema::hasTable('sessions')) {
             Schema::create('sessions', function (Blueprint $table) {
                 $table->string('id')->primary();
                 $table->foreignId('user_id')->nullable()->index();
@@ -44,13 +29,13 @@ return new class extends Migration
                 $table->integer('last_activity')->index();
             });
         }
+    }
 
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-        Schema::dropIfExists('users');
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }
