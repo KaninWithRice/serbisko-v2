@@ -63,6 +63,7 @@
                     </svg>
                 </div>
                 <h3 class="text-lg font-bold text-red-600 leading-tight mb-2">Document Not Recognized</h3>
+                <p id="attempt-counter" class="text-blue-900 font-bold text-sm mb-1"></p>
                 <p id="error-message" class="text-gray-700 text-sm font-medium mb-6">
                     Make sure the correct original document is placed flat on the scanner.
                 </p>
@@ -181,16 +182,16 @@
         const errorPopup = document.getElementById('error-popup');
         const rescanBtn = document.getElementById('rescan-btn');
         const errorMessageLabel = document.getElementById('error-message');
+        const attemptCounterLabel = document.getElementById('attempt-counter');
 
         async function startCamera() {
             try {
-                // Requesting highest possible 4K/8K constraints with continuous autofocus
+                // Requesting high resolution with fallback
                 const constraints = {
                     video: {
-                        width: { ideal: 4096 },
-                        height: { ideal: 2160 },
-                        facingMode: { ideal: "environment" },
-                        advanced: [{ focusMode: "continuous" }]
+                        width: { ideal: 1920, max: 4096 },
+                        height: { ideal: 1080, max: 2160 },
+                        facingMode: { ideal: "environment" }
                     }
                 };
 
@@ -255,6 +256,9 @@
                     errorPopup.classList.remove('hidden');
                     if(result.message) {
                         errorMessageLabel.textContent = result.message;
+                    }
+                    if(result.attempts) {
+                        attemptCounterLabel.textContent = `Attempt ${result.attempts} of 3`;
                     }
                 } else if (result.status === 'success' && result.redirect) {
                     // SUCCESS! Force redirect to verify screen

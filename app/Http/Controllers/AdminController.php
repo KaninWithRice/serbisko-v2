@@ -305,7 +305,58 @@ class AdminController extends Controller
         return view('admin.systemsync', compact('syncHistory', 'lastSync', 'formUrl', 'isConnected'));
     }
 
-    public function verification(){ return view('admin.verification'); }
+    // 5. ADMIN MANUAL VERIFICATION LOGIC
+    public function verification()
+    { 
+        $pendingScans = DB::table('scans')
+            ->join('users', 'scans.user_id', '=', 'users.id')
+            ->leftJoin('students', 'users.id', '=', 'students.user_id')
+            ->leftJoin('kiosk_enrollments as ke', 'students.lrn', '=', 'ke.student_lrn')
+            ->leftJoin('pre_enrollments as pe', 'students.lrn', '=', 'pe.student_lrn')
+            ->select(
+                'scans.*', 
+                'users.first_name', 
+                'users.last_name',
+                'ke.grade_level as kiosk_grade',
+                'pe.responses'
+            )
+            ->where('scans.status', 'manual_verification')
+            ->orderBy('scans.created_at', 'asc')
+            ->get()
+            ->map(function($scan) {
+                if ($scan->grade_level) {
+                    $scan->display_grade = $scan->grade_level;
+                } elseif ($scan->kiosk_grade) {
+                    $scan->display_grade = $scan->kiosk_grade;
+                } else {
+                    $details = json_decode($scan->responses, true) ?? [];
+                    $scan->display_grade = $details['Grade Level to Enroll'] ?? '—';
+                }
+                return $scan;
+            });
+
+        if (request()->ajax()) {
+            return view('admin.partials.verification-table', compact('pendingScans'))->render();
+        }
+
+        return view('admin.verification', compact('pendingScans')); 
+    }
+
+    public function handleVerificationAction(Request $request) 
+    {
+        $scanId = $request->input('scan_id');
+        $action = $request->input('action'); // 'approve' or 'decline'
+
+        $status = ($action === 'approve') ? 'manual_approved' : 'manual_declined';
+
+        DB::table('scans')->where('id', $scanId)->update([
+            'status' => $status,
+            'remarks' => 'Manually ' . $action . 'd by Admin'
+        ]);
+
+        return back()->with('success', 'Document has been ' . $action . 'd.');
+    }
+
     public function requirementhub(){ return view('admin.requirementhub');}
     public function accountsettings(){ return view('admin.accountsettings'); }
 

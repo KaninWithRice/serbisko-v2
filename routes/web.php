@@ -37,6 +37,7 @@ Route::middleware([CheckAdmin::class])->group(function () {
         Route::get('/requirementhub', [AdminController::class, 'requirementhub'])->name('requirementhub');
         Route::get('/accountsettings', [AdminController::class, 'accountsettings'])->name('accountsettings');
         Route::post('/systemsync/perform', [AdminController::class, 'performSync'])->name('sync.perform');
+        Route::post('/verification/action', [AdminController::class, 'handleVerificationAction'])->name('verification.action');
     });
 });
 
@@ -104,18 +105,24 @@ Route::get('/student/checklist', function () {
 
 Route::post('/student/save-checklist', function (Request $request) {
     $studentStatus = session('student_status', 'Regular'); 
-    $firstDocs = [
-        'Regular' => 'Report Card (SF9)',
-        'ALS' => 'ALS Certificate',
-        'Transferee' => 'Report Card (SF9)',
-        'Balik-Aral' => 'Report Card (SF9)'
-    ];
-    session(['current_doc' => $firstDocs[$studentStatus] ?? 'Report Card (SF9)']);
     
-    return redirect('/student/capture-document');
+    // Normalize status for consistency
+    $statusKey = strtolower($studentStatus);
+    
+    $firstDocs = [
+        'regular'    => 'Report Card (SF9)',
+        'als'        => 'ALS Certificate',
+        'transferee' => 'Report Card (SF9)',
+        'balik-aral' => 'Report Card (SF9)'
+    ];
+    
+    $currentDoc = $firstDocs[$statusKey] ?? 'Report Card (SF9)';
+    session(['current_doc' => $currentDoc]);
+    
+    return redirect('/student/capture');
 });
 
-Route::get('/student/capture-document', function (Request $request) {
+Route::get('/student/capture', function (Request $request) {
     if (!session()->has('user_id')) return redirect('/');
     
     try {
