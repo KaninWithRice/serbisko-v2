@@ -33,6 +33,10 @@ class AdminController extends Controller
     {
         $grade = $request->grade_level;
 
+        /**
+         * Reusable filter for general counts.
+         * Note: This still handles the fallback logic for general registration counts.
+         */
         $applyFilter = function($query) use ($grade) {
             if (!empty($grade)) {
                 $query->where(function($q) use ($grade) {
@@ -45,6 +49,8 @@ class AdminController extends Controller
             }
             return $query;
         };
+
+        // --- Core Enrollment Stats ---
 
         $totalRegistrations = $applyFilter(DB::table('students')
             ->join('users', 'students.user_id', '=', 'users.id') 
@@ -72,32 +78,29 @@ class AdminController extends Controller
         $percVerified = ($totalSubmissions / $max) * 100;
         $percEnrolled = ($totalEnrolled / $max) * 100;
 
-        $electives = ['STEM', 'ASSH', 'BE', 'TechPro'];
-        $electiveCounts = [];
+        // --- Refactored Elective Counting (Exclusive to kiosk_enrollments.cluster) ---
 
-        foreach ($electives as $elective) {
-            $fullMap = [
-                'STEM'    => 'Science, Technology, Engineering, and Mathematics (STEM)',
-                'BE'      => 'Business and Entrepreneurship (BE)',
-                'ASSH'    => 'Arts, Social Sciences, and Humanities (ASSH)',
-                'TechPro' => 'Technical-Vocational-Livelihood (TVL)'
-            ];
-            $fullString = $fullMap[$elective] ?? $elective;
+        $rawCounts = DB::table('kiosk_enrollments')
+            ->join('users', 'kiosk_enrollments.id', '=', 'users.id')
+            ->whereNull('users.deleted_at')
+            ->when(!empty($grade), function($query) use ($grade) {
+                return $query->where('kiosk_enrollments.grade_level', $grade);
+            })
+            ->whereIn('cluster', ['STEM', 'ASSH', 'BE', 'TechPro'])
+            ->select('cluster', DB::raw('count(*) as count'))
+            ->groupBy('cluster')
+            ->pluck('count', 'cluster')
+            ->toArray();
 
-            $electiveCounts[$elective] = $applyFilter(DB::table('students')
-                ->join('users', 'students.user_id', '=', 'users.id')
-                ->whereNull('users.deleted_at')
-                ->join('pre_enrollments', 'students.lrn', '=', 'pre_enrollments.student_lrn')
-                ->leftJoin('kiosk_enrollments', 'users.id', '=', 'kiosk_enrollments.id')
-                ->where(function($q) use ($elective, $fullString) {
-                    $q->where('kiosk_enrollments.cluster', $elective)
-                    ->orWhere(function($sub) use ($fullString) {
-                        $sub->whereNull('kiosk_enrollments.cluster')
-                            ->where('pre_enrollments.responses', 'like', '%"Cluster of Electives":"' . $fullString . '"%');
-                    });
-                }))
-                ->count();
-        }
+        // Mapping to ensure all keys exist for the frontend even if count is 0
+        $electiveCounts = [
+            'STEM'    => $rawCounts['STEM'] ?? 0,
+            'ASSH'    => $rawCounts['ASSH'] ?? 0,
+            'BE'      => $rawCounts['BE'] ?? 0,
+            'TechPro' => $rawCounts['TechPro'] ?? 0
+        ];
+
+        // --- Recent Submissions Logic ---
 
         $recentKioskQuery = DB::table('kiosk_enrollments')
             ->join('users', 'kiosk_enrollments.id', '=', 'users.id')
@@ -115,9 +118,12 @@ class AdminController extends Controller
 
         $recentKioskSubmissions = $recentKioskQuery->orderBy('kiosk_enrollments.completed_at', 'desc')->limit(5)->get();
 
+        // --- UI Helpers & Formatting ---
+
         $lastSync = DB::table('sync_histories')->where('status', 'Success')->latest()->first();
         $lastSyncTime = $lastSync ? \Carbon\Carbon::parse($lastSync->created_at)->diffForHumans() : 'Never';
 
+        // Calculation for Donut Chart Gradient
         $totalElectives = array_sum($electiveCounts) ?: 1;
         $pSTEM = ($electiveCounts['STEM'] / $totalElectives) * 100;
         $pASSH = ($electiveCounts['ASSH'] / $totalElectives) * 100;

@@ -6,7 +6,7 @@
 
 <div class="max-w-full mx-auto p-4 space-y-6 font-sans">
 
-    <div class="bg-[#F7FBF9]/50 rounded-2xl shadow-lg border-l-8 border-[#1a8a44] overflow-hidden relative">
+    <div class="bg-[#F7FBF9]/40 rounded-2xl shadow-lg border-l-8 border-[#1a8a44] overflow-hidden relative">
         <div class="p-8 pl-12 flex justify-between items-start">
             <div>
                 <p class="text-[10px] font-bold text-[#a0aec0] uppercase tracking-widest mb-1">Registered Name</p>
@@ -18,19 +18,19 @@
                 </p>
             </div>
 
-            <div class="bg-[#c6f6d5]/50 text-[#2f855a] text-[10px] font-extrabold px-4 py-2 rounded-full uppercase tracking-normal">
+            <div class="bg-[#F7FBF9]/40 text-[#2f855a] text-[10px] font-extrabold px-4 py-2 rounded-full uppercase tracking-normal">
                 {{ str_replace('_', ' ', auth()->user()->role) }}
             </div>
         </div>
     </div>
 
-    <div class="bg-[#F7FBF9]/50 rounded-2xl shadow-lg border-l-8 border-[#1a8a44] overflow-hidden relative">
+    <div class="bg-[#F7FBF9]/40 rounded-2xl shadow-lg border-l-8 border-[#1a8a44] overflow-hidden relative">
         @if(session('success'))
             <div x-data="{ show: true }" 
                 x-init="setTimeout(() => show = false, 5000)" 
                 x-show="show" 
                 x-transition.duration.500ms
-                class="mb-6 p-4 bg-[#c6f6d5]/50 border-l-4 border-[#1a8a44] text-[#003918] rounded-r-lg shadow-sm flex items-center gap-3">
+                class="mb-6 p-4 bg-[#F7FBF9]/40 border-l-4 border-[#1a8a44] text-[#003918] rounded-r-lg shadow-sm flex items-center gap-3">
                 <svg class="w-5 h-5 text-[#1a8a44]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
                 </svg>

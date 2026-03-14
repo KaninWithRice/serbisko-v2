@@ -15,7 +15,7 @@
                     <button type="submit" 
                             @click="syncing = true"
                             :class="syncing ? 'opacity-75 cursor-not-allowed' : ''"
-                            class="flex items-center gap-2 py-1 text-[#005288] font-bold text-md hover:bg-gray-200 transition-colors">
+                            class="flex items-center gap-2 py-1 text-[#005288] font-bold text-md hover:text-[#005288]/50 transition-colors inline-block mt-auto">
                         <svg class="w-4 h-4" :class="syncing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
@@ -36,7 +36,7 @@
             </div>
         </div>
         <a href="{{ route('admin.students', ['status' => 'Document Verified', 'grade_level' => request('grade_level')]) }}" 
-        class="text-[#00568d] font-bold underline">
+        class="text-[#00568d] font-bold underline text-md hover:text-[#005288]/50 transition-colors inline-block mt-auto">
             View
         </a>
     </div>
@@ -50,7 +50,7 @@
             </div>
         </div>
         <a href="{{ route('admin.students', ['status' => 'Officially Enrolled']) }}" 
-           class="text-[#00568d] font-bold underline text-md hover:text-[#003918] transition-colors inline-block mt-auto">
+           class="text-[#00568d] font-bold underline text-md hover:text-[#005288]/50 transition-colors inline-block mt-auto">
             View
         </a>
     </div>
