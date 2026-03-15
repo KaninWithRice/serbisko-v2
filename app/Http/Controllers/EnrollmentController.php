@@ -73,7 +73,7 @@ class EnrollmentController extends Controller
         return redirect('/student/cluster-loading');
     }
 
-    private function getRequiredDocs($status) {
+    public function getRequiredDocs($status) {
         $status = strtolower($status ?? 'regular');
         if ($status === 'als') {
             return [
@@ -110,6 +110,22 @@ class EnrollmentController extends Controller
 
         $status = $enrollment->academic_status ?? 'regular';
         $requiredDocs = $this->getRequiredDocs($status);
+
+        // Check if all required docs are already verified
+        $allVerified = true;
+        foreach ($requiredDocs as $label => $prefix) {
+            $statusCol = $prefix . '_status';
+            $docStatus = $enrollment->$statusCol ?? 'pending';
+            if ($docStatus !== 'verified' && $docStatus !== 'manual_verification') {
+                $allVerified = false;
+                break;
+            }
+        }
+
+        if ($allVerified) {
+            Log::info("Enrollment Complete - Redirecting to Thank You", ['userId' => $userId]);
+            return redirect('/student/thankyou');
+        }
         
         Log::info("Showing Checklist", ['userId' => $userId, 'status' => $status]);
         

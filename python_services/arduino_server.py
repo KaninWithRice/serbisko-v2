@@ -98,6 +98,11 @@ def start_conveyor():
     threading.Thread(target=conveyor_timer).start()
     return jsonify({'status': 'success', 'command': 'C0', 'message': 'Conveyor started. Will auto-stop in 6s.'})
 
+@app.route('/api/conveyor/w', methods=['POST'])
+def trigger_w():
+    send_command('w')
+    return jsonify({'status': 'success', 'command': 'w', 'message': 'Conveyor W command triggered'})
+
 # ==========================================
 # 3. BIN ROUTING (Fixes the /api/strand/be 404 error)
 # ==========================================

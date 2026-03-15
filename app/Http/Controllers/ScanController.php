@@ -22,6 +22,35 @@ class ScanController extends Controller
         return 'sf9'; // Fallback
     }
 
+    private function triggerArduinoSuccess() {
+        try {
+            // 1. Close Slot (F)
+            Http::timeout(3)->post('http://127.0.0.1:51234/api/door', ['action' => 'close']);
+            
+            // 2. Trigger Conveyor Belt (w)
+            // Note: arduino_server.py might need a /api/conveyor/w endpoint 
+            // but for now we'll use the existing send_command logic if possible 
+            // or just hit a generic endpoint that we'll add.
+            Http::timeout(3)->post('http://127.0.0.1:51234/api/conveyor/w');
+            
+            Log::info("Arduino Success commands (F + w) sent.");
+        } catch (\Exception $e) {
+            Log::error("Arduino Success Trigger failed: " . $e->getMessage());
+        }
+    }
+
+    public function triggerSorting(Request $request) {
+        $cluster = $request->input('cluster');
+        if (!$cluster) return response()->json(['error' => 'No cluster provided'], 400);
+
+        try {
+            Http::timeout(3)->post('http://127.0.0.1:51234/api/strand/' . $cluster);
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     public function processDocument(Request $request)
     {
         try {
@@ -178,6 +207,9 @@ class ScanController extends Controller
                             'latest_scan_remarks' => 'Verified',
                             'updated_at' => now()
                         ]);
+
+                        // Trigger Arduino SUCCESS (Close + w)
+                        $this->triggerArduinoSuccess();
                     }
                 }
 
@@ -231,6 +263,9 @@ class ScanController extends Controller
                     'latest_scan_remarks' => 'Verified',
                     'updated_at' => now()
                 ]);
+
+                // Trigger Arduino SUCCESS (Close + w)
+                $this->triggerArduinoSuccess();
             }
             return response()->json(['success' => true]);
         }
@@ -268,12 +303,33 @@ class ScanController extends Controller
             $currentIndex = array_search($currentDoc, $selectedDocs);
             if ($currentIndex !== false && isset($selectedDocs[$currentIndex + 1])) {
                 $nextDoc = $selectedDocs[$currentIndex + 1];
-                session(['current_doc' => $nextDoc]);
+                // Do NOT update session(['current_doc']) here! 
+                // Let the capture controller update it when they land on the page.
                 return '/student/capture?doc=' . urlencode($nextDoc);
             }
         }
 
-        // If no more selected docs, go back to the Checklist (where they can see status)
+        // Check if EVERYTHING required for their status is verified
+        $enrollment = DB::table('kiosk_enrollments')->where('id', $userId)->first();
+        if ($enrollment) {
+            $enrollController = new \App\Http\Controllers\EnrollmentController();
+            $requiredDocs = $enrollController->getRequiredDocs($enrollment->academic_status);
+            
+            $allVerified = true;
+            foreach ($requiredDocs as $label => $prefix) {
+                $statusCol = $prefix . '_status';
+                $status = $enrollment->$statusCol ?? 'pending';
+                if ($status !== 'verified' && $status !== 'manual_verification') {
+                    $allVerified = false;
+                    break;
+                }
+            }
+
+            if ($allVerified) {
+                return '/student/thankyou';
+            }
+        }
+
         return '/student/checklist';
     }
 }
