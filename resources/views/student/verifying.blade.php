@@ -73,6 +73,8 @@
 
     <script>
         let pollInterval;
+        let hardwarePollInterval;
+        let sortingActive = false;
 
         function checkStatus() {
             fetch('/student/check-scan-status')
@@ -81,31 +83,13 @@
                     // Success conditions (AI or Manual Admin)
                     if (data.status === 'verified_lis' || data.status === 'verified' || data.status === 'manual_approved') {
                         clearInterval(pollInterval);
-                        document.getElementById('success-title').innerText = data.current_doc + " Verified!";
+                        document.getElementById('success-title').innerText = (data.current_doc || "Document") + " Verified!";
                         document.getElementById('storing-subtext').innerText = data.next_url.includes('thankyou') ? "All documents complete! Finishing up..." : "Preparing next document scan...";
 
                         showCard('success-card');
-
-                        // Start rejection polling during the 10s wait
-                        const rejectInterval = setInterval(() => {
-                            fetch('/student/check-rejection')
-                                .then(r => r.json())
-                                .then(rejData => {
-                                    if (rejData.rejected) {
-                                        console.log("PAPER_REJECTED recorded in background.");
-                                        clearInterval(rejectInterval); // Stop once recorded
-                                    }
-                                });
-                        }, 2000);
-
-                        setTimeout(() => {
-                            showCard('storing-card');
-                            document.getElementById('progress-bar').classList.add('animate-loading-bar');
-                            setTimeout(() => { 
-                                clearInterval(rejectInterval);
-                                window.location.href = data.next_url; 
-                            }, 10000); 
-                        }, 2000); 
+                        
+                        // --- PHYSICAL HARDWARE TRIGGER ---
+                        triggerHardwareConveyor(data.next_url);
                     } 
                     // Waiting for Admin
                     else if (data.status === 'manual_verification') {
@@ -115,7 +99,7 @@
                     else if (data.status === 'manual_declined') {
                         clearInterval(pollInterval);
                         showCard('halted-card');
-                        setTimeout(() => { window.location.href = '/logout'; }, 7000); // 7 seconds to read the message, then kick out
+                        setTimeout(() => { window.location.href = '/logout'; }, 7000); 
                     }
                     // Standard AI Failure
                     else if (data.status === 'failed_lis' || data.status === 'failed') {
@@ -126,6 +110,60 @@
                     }
                 })
                 .catch(err => console.error("Error checking status:", err));
+        }
+
+        function triggerHardwareConveyor(nextUrl) {
+            // 1. Send 'W' command to Arduino via Python Server
+            fetch('http://127.0.0.1:51234/api/conveyor/w', { method: 'POST' })
+                .then(() => {
+                    console.log("📡 Hardware Sorting Triggered (W command sent)");
+                    sortingActive = true;
+                    
+                    // 2. Transition to Storing Card
+                    setTimeout(() => {
+                        showCard('storing-card');
+                        document.getElementById('progress-bar').classList.add('animate-loading-bar');
+                    }, 2000);
+
+                    // 3. Start Polling for physical PAPER_REJECTED signal during the 10s sorting window
+                    hardwarePollInterval = setInterval(() => {
+                        checkHardwareRejection();
+                    }, 1000);
+
+                    // 4. Set final redirect timer (12 seconds total for sorting)
+                    setTimeout(() => {
+                        if (sortingActive) {
+                            clearInterval(hardwarePollInterval);
+                            window.location.href = nextUrl;
+                        }
+                    }, 12000); 
+                })
+                .catch(err => {
+                    console.error("⚠️ Hardware Link Offline:", err);
+                    // Fallback: Continue without hardware if offline
+                    setTimeout(() => {
+                        showCard('storing-card');
+                        document.getElementById('progress-bar').classList.add('animate-loading-bar');
+                        setTimeout(() => { window.location.href = nextUrl; }, 10000);
+                    }, 2000);
+                });
+        }
+
+        function checkHardwareRejection() {
+            fetch('/student/check-rejection')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.rejected) {
+                        console.log("🚨 PHYSICAL REJECTION DETECTED!");
+                        sortingActive = false;
+                        clearInterval(hardwarePollInterval);
+                        showCard('halted-card');
+                        
+                        // Force logout after detection to clear state
+                        setTimeout(() => { window.location.href = '/logout'; }, 8000);
+                    }
+                })
+                .catch(err => console.error("Hardware poll error:", err));
         }
 
         function showCard(cardId) {

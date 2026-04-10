@@ -61,16 +61,20 @@
                         <td class="py-3 px-4 text-center text-[11px] text-gray-600">{{ $student->display_grade }}</td>
                         <td class="py-3 px-4 text-left text-[11px] text-gray-600 truncate">{{ $student->display_track }}</td>
                         <td class="py-3 px-4 text-left text-[11px] text-gray-600 truncate">{{ $student->display_cluster }}</td>
-                        <td class="py-3 px-4 text-left">
-                            <span class="px-2 py-1 rounded-full text-[9px] font-bold uppercase border {{ $student->status_style }}">
+                        <td class="py-3 px-4 text-center">
+                            <span class="text-[11px] {{ $student->status_style }} px-3 py-1 rounded-full border font-bold">
                                 {{ $student->enrollment_category }}
                             </span>
                         </td>
-                        <td class="py-3 px-4 text-center text-[11px] text-gray-600">—</td>
                         <td class="py-3 px-4 text-center">
-                            <a href="{{ route('admin.studentpage.profilepage', ['id' => $student->id]) }}"
+                            <span class="text-[11px] {{ $student->requirement_style }}">
+                                {{ $student->requirement_display }}
+                            </span>
+                        </td>
+                        <td class="py-3 px-4 text-center">
+                            <a href="{{ route('admin.studentpage.profilepage', ['id' => $student->id]) }}" 
                                class="text-[10px] font-bold uppercase tracking-wider text-[#005288] hover:text-[#00923F] hover:underline transition-colors">
-                                View
+                                View Profile
                             </a>
                         </td>
                     </tr>

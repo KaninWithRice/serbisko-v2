@@ -51,7 +51,14 @@ class StudentController extends Controller
             'kiosk_enrollments.grade_level as kiosk_grade',
             'kiosk_enrollments.track as kiosk_track',
             'kiosk_enrollments.cluster as kiosk_cluster',
-            'kiosk_enrollments.academic_status as kiosk_status'
+            'kiosk_enrollments.academic_status as kiosk_status',
+            'kiosk_enrollments.sf9_status',
+            'kiosk_enrollments.psa_status',
+            'kiosk_enrollments.enroll_form_status',
+            'kiosk_enrollments.als_cert_status',
+            'kiosk_enrollments.affidavit_status',
+            'kiosk_enrollments.good_moral_status',
+            'kiosk_enrollments.sf10_status'
         );
 
         if ($request->filled('search')) {
@@ -101,7 +108,25 @@ class StudentController extends Controller
                 $query->whereNull('kiosk_enrollments.grade_level');
             } elseif ($status === 'Document Verified') {
                 $query->whereNotNull('kiosk_enrollments.grade_level');
+            } elseif ($status === 'Officially Enrolled') {
+                $query->where('kiosk_enrollments.academic_status', 'Officially Enrolled');
             }
+        }
+
+        if ($request->filled('requirements_status')) {
+            $status = $request->requirements_status;
+            $query->where(function($q) use ($status) {
+                $cols = ['sf9_status', 'psa_status', 'enroll_form_status', 'als_cert_status', 'affidavit_status', 'good_moral_status', 'sf10_status'];
+                if ($status === 'Complete') {
+                    foreach ($cols as $col) {
+                        $q->orWhere("kiosk_enrollments.$col", 'verified');
+                    }
+                } else {
+                    foreach ($cols as $col) {
+                        $q->where("kiosk_enrollments.$col", '!=', 'verified');
+                    }
+                }
+            });
         }
 
         switch ($request->get('sort')) {
@@ -138,16 +163,29 @@ class StudentController extends Controller
 
             $student->display_grade   = $student->kiosk_grade   ?? ($details['Grade Level to Enroll'] ?? '—');
             $student->display_track   = $student->kiosk_track   ?? ($details['Track'] ?? '—');
-            $student->display_status  = $student->kiosk_status  ?? ($details['Academic Status'] ?? '—');
+            $student->display_status  = ($details['Academic Status'] ?? null) ?? ($student->kiosk_status ?? '—');
             $student->display_cluster = $student->kiosk_cluster ?? ($acronyms[$jsonCluster] ?? $jsonCluster);
 
-            if (!empty($student->kiosk_grade)) {
+            if ($student->kiosk_status === 'Officially Enrolled') {
+                $student->enrollment_category = 'Officially Enrolled';
+                $student->status_style = 'bg-[#003918] text-white border-green-900';
+            } elseif (!empty($student->kiosk_grade)) {
                 $student->enrollment_category = 'Document Verified';
                 $student->status_style = 'bg-[#00923F] text-white border-green-200';
             } else {
                 $student->enrollment_category = 'Registered';
                 $student->status_style = 'bg-[#048F81] text-white border-[#048F81]';
             }
+
+            // Requirement Status Logic
+            $verifiedCount = 0;
+            $cols = ['sf9_status', 'psa_status', 'enroll_form_status', 'als_cert_status', 'affidavit_status', 'good_moral_status', 'sf10_status'];
+            foreach ($cols as $col) {
+                if ($student->$col === 'verified') $verifiedCount++;
+            }
+            $student->requirement_display = $verifiedCount > 0 ? 'Verified' : 'Pending';
+            $student->requirement_style = $verifiedCount > 0 ? 'text-green-600 font-bold' : 'text-gray-600';
+
             return $student;
         });
 
@@ -235,9 +273,37 @@ class StudentController extends Controller
             }
         }
 
+        // 7. Fetch Scanned Documents from kiosk_enrollments
+        $verifiedScans = [];
+        $docTypes = [
+            'sf9' => 'Report Card (SF9)',
+            'psa' => 'Birth Certificate',
+            'enroll_form' => 'Enrollment Form',
+            'als_cert' => 'ALS Certificate',
+            'affidavit' => 'Affidavit',
+            'good_moral' => 'Good Moral Certificate',
+            'sf10' => 'Form 137 / SF10'
+        ];
+
+        $enrollment = DB::table('kiosk_enrollments')->where('id', $student->user_id)->first();
+        if ($enrollment) {
+            foreach ($docTypes as $prefix => $label) {
+                $statusCol = "{$prefix}_status";
+                $pathCol = "{$prefix}_path";
+                if (isset($enrollment->$statusCol) && $enrollment->$statusCol === 'verified' && !empty($enrollment->$pathCol)) {
+                    $verifiedScans[] = (object)[
+                        'document_type' => $label,
+                        'file_path' => $enrollment->$pathCol,
+                        'created_at' => $enrollment->updated_at
+                    ];
+                }
+            }
+        }
+
         return view('admin.studentpage.profilepage', compact(
             'student', 'details', 'dynamicDetails', 
-            'finalGrade', 'finalTrack', 'finalCluster', 'finalStatus'
+            'finalGrade', 'finalTrack', 'finalCluster', 'finalStatus',
+            'verifiedScans'
         ));
     }
 

@@ -72,9 +72,16 @@
             </div>
 
             <div class="flex items-center gap-3">
+                @if(count($verifiedScans) > 0)
+                    <button type="button" onclick="toggleDocsModal()" class="flex items-center gap-2 px-4 py-2.5 bg-[#005288] text-white rounded-lg font-bold text-sm hover:bg-[#003918] transition-colors shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        SCANNED DOCUMENTS
+                    </button>
+                @endif
+
                 <button type="button" @click="editing = !editing" 
                     class="inline-flex items-center px-5 py-2.5 rounded-lg font-semibold shadow-sm transition outline-none border"
-                    :class="editing ? 'bg-gray-100 text-gray-700 border-gray-300' : 'bg-[#005288] hover:bg-[#003f66] text-white border-transparent'">
+                    :class="editing ? 'bg-gray-100 text-gray-700 border-gray-300' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-gray-300'">
                     <span x-text="editing ? 'Cancel' : 'Edit Profile'"></span>
                 </button>
                 
@@ -256,4 +263,54 @@
         </div>
     </form>
 </div>
+
+<!-- Documents Modal -->
+<div id="docsModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="toggleDocsModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        
+        <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl w-full border border-gray-200">
+            <div class="bg-white px-6 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div class="flex justify-between items-center border-b border-gray-100 pb-4 mb-4">
+                    <h3 class="text-xl leading-6 font-black text-[#003918] uppercase tracking-tighter" id="modal-title">
+                        Verified Documents
+                    </h3>
+                    <button onclick="toggleDocsModal()" class="text-gray-400 hover:text-red-500 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    @foreach($verifiedScans as $scan)
+                        <div class="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden shadow-sm group">
+                            <div class="p-3 bg-white border-b border-gray-100 flex justify-between items-center">
+                                <span class="text-xs font-bold text-[#005288] uppercase tracking-wider">{{ $scan->document_type }}</span>
+                                <span class="text-[10px] text-gray-400 font-medium">{{ \Carbon\Carbon::parse($scan->created_at)->format('M d, Y') }}</span>
+                            </div>
+                            <div class="relative aspect-[3/4] bg-gray-200 overflow-hidden cursor-zoom-in" onclick="window.open('{{ asset('storage/' . $scan->file_path) }}', '_blank')">
+                                <img src="{{ asset('storage/' . $scan->file_path) }}" alt="{{ $scan->document_type }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                                <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                    <span class="bg-white/90 text-[#005288] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">Click to Enlarge</span>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 sm:flex sm:flex-row-reverse">
+                <button type="button" onclick="toggleDocsModal()" class="w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-5 py-2.5 bg-white text-xs font-black uppercase tracking-widest text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none sm:w-auto">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleDocsModal() {
+        const modal = document.getElementById('docsModal');
+        modal.classList.toggle('hidden');
+    }
+</script>
 @endsection

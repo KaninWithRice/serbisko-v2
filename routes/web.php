@@ -49,6 +49,7 @@ Route::middleware([CheckAdmin::class])->group(function () {
         Route::get('/settings/security', [AuthController::class, 'showSecurity'])->name('admin.security');
         Route::post('/systemsync/perform', [RegistrationSyncController::class, 'performSync'])->name('sync.perform');
         Route::post('/verification/action', [VerificationController::class, 'handleVerificationAction'])->name('verification.action');
+        Route::post('/verification/collect', [VerificationController::class, 'collectRejectedPaper'])->name('collect-rejected-paper');
         Route::post('/accessmanagement/store', [AccessController::class, 'storeUser'])->name('accessmanagement.store');
         Route::delete('/users/{id}', [AccessController::class, 'destroy'])->name('destroyUser');
         Route::patch('/users/{id}/restore', [AccessController::class, 'restoreUser'])->name('restoreUser');

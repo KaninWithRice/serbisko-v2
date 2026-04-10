@@ -1,0 +1,51 @@
+# Virtual Hosts
+#
+# Required modules: mod_log_config
+
+# If you want to maintain multiple domains/hostnames on your
+# machine you can setup VirtualHost containers for them. Most configurations
+# use only name-based virtual hosts so the server doesn't need to worry about
+# IP addresses. This is indicated by the asterisks in the directives below.
+#
+# Please see the documentation at 
+# <URL:http://httpd.apache.org/docs/2.4/vhosts/>
+# for further details before you try to setup virtual hosts.
+#
+# You may use the command line option '-S' to verify your virtual host
+# configuration.
+
+#
+# VirtualHost: The first block is the default site for all requests.
+#
+<VirtualHost *:80>
+    ServerName serbisko.local
+    ServerAlias 192.168.0.109
+    DocumentRoot "/home/serbisko/serbisko-v2/public"
+
+    <Directory "/home/serbisko/serbisko-v2/public">
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog "/opt/lampp/logs/serbisko-error.log"
+    CustomLog "/opt/lampp/logs/serbisko-access.log" combined
+</VirtualHost>
+
+# Other VirtualHost examples (disabled or secondary)
+<VirtualHost *:80>
+    ServerAdmin webmaster@dummy-host.example.com
+    DocumentRoot "/opt/lampp/docs/dummy-host.example.com"
+    ServerName dummy-host.example.com
+    ServerAlias www.dummy-host.example.com
+    ErrorLog "logs/dummy-host.example.com-error_log"
+    CustomLog "logs/dummy-host.example.com-access_log" common
+</VirtualHost>
+
+<VirtualHost *:80>
+    ServerAdmin webmaster@dummy-host2.example.com
+    DocumentRoot "/opt/lampp/docs/dummy-host2.example.com"
+    ServerName dummy-host2.example.com
+    ErrorLog "logs/dummy-host2.example.com-error_log"
+    CustomLog "logs/dummy-host2.example.com-access_log" common
+</VirtualHost>

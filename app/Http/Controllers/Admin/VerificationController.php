@@ -66,6 +66,7 @@ public function verification()
 
                 foreach ($rejections as $rej) {
                     $rejectedPapers->push((object)[
+                        'user_id' => $row->id,
                         'first_name' => $row->first_name,
                         'last_name' => $row->last_name,
                         'display_grade' => $displayGrade,
@@ -104,5 +105,29 @@ public function verification()
         ]);
 
         return back()->with('success', 'Document has been ' . $action . 'd.');
+    }
+
+    public function collectRejectedPaper(Request $request)
+    {
+        $userId = $request->input('user_id');
+        $rejectedAt = $request->input('rejected_at');
+
+        $enrollment = DB::table('kiosk_enrollments')->where('id', $userId)->first();
+        if ($enrollment && $enrollment->rejected_papers) {
+            $rejectedPapers = json_decode($enrollment->rejected_papers, true);
+            
+            // Filter out the collected paper
+            $updatedPapers = array_filter($rejectedPapers, function($rej) use ($rejectedAt) {
+                return $rej['rejected_at'] !== $rejectedAt;
+            });
+
+            DB::table('kiosk_enrollments')->where('id', $userId)->update([
+                'rejected_papers' => json_encode(array_values($updatedPapers))
+            ]);
+
+            return back()->with('success', 'Paper marked as collected.');
+        }
+
+        return back()->with('error', 'Rejection record not found.');
     }
 }
