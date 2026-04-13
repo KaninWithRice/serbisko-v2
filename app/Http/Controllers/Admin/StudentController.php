@@ -142,9 +142,12 @@ class StudentController extends Controller
                 $student->status_style = 'bg-[#048F81] text-white border-[#048F81]';
             }
 
-            // Check verified scans for this student (using lrn)
+            // Check verified scans for this student (using lrn or user_id)
             $verifiedCount = DB::table('scans')
-                ->where('lrn', $student->lrn)
+                ->where(function($q) use ($student) {
+                    $q->where('lrn', $student->lrn)
+                      ->orWhere('user_id', $student->user_primary_id);
+                })
                 ->where('status', 'verified')
                 ->count();
 
@@ -166,9 +169,11 @@ class StudentController extends Controller
             ->join('users', 'students.user_id', '=', 'users.id')
             ->leftJoin('pre_enrollments', 'students.id', '=', 'pre_enrollments.student_id')
             ->leftJoin('kiosk_enrollments', 'students.id', '=', 'kiosk_enrollments.student_id') 
+            ->leftJoin('sections', 'students.section_id', '=', 'sections.id')
             ->select([
                 'students.lrn as id', // Alias for consistency
                 'students.*', 
+                'sections.name as section_name',
                 'users.first_name', 'users.last_name', 'users.extension_name', 'users.middle_name', 'users.birthday', 
                 'pre_enrollments.responses',
                 'kiosk_enrollments.grade_level as kiosk_grade', 
@@ -218,16 +223,34 @@ class StudentController extends Controller
             }
         }
 
-        // 4. Fetch Scanned Documents from scans table
+        // 4. Fetch Scanned Documents from scans table - Deduplicated by latest document type
         $verifiedScans = DB::table('scans')
-            ->where('lrn', $student->lrn)
-            ->where('status', 'verified')
+            ->whereIn('id', function($query) use ($student) {
+                $query->select(DB::raw('MAX(id)'))
+                    ->from('scans')
+                    ->where(function($q) use ($student) {
+                        $q->where('lrn', $student->lrn)
+                          ->orWhere('user_id', $student->user_id);
+                    })
+                    ->where('status', 'verified')
+                    ->groupBy('document_type');
+            })
+            ->orderBy('created_at', 'desc')
             ->get();
+
+        // 5. Fetch Sections data for the profile
+        $academicYears = \App\Models\Section::distinct()->pluck('academic_year')->toArray();
+        $settings = \App\Models\SystemSetting::first();
+        $activeSY = $settings ? $settings->active_school_year : '2025-2026';
+        if (!in_array($activeSY, $academicYears)) {
+            $academicYears[] = $activeSY;
+        }
+        sort($academicYears);
 
         return view('admin.studentpage.profilepage', compact(
             'student', 'details', 'dynamicDetails', 
             'finalGrade', 'finalTrack', 'finalCluster', 'finalStatus',
-            'verifiedScans'
+            'verifiedScans', 'academicYears', 'activeSY'
         ));
     }
 
@@ -262,7 +285,8 @@ class StudentController extends Controller
                 'perm_house_number', 'perm_street', 'perm_barangay', 'perm_city', 'perm_province', 'perm_zip_code',
                 'father_last_name', 'father_first_name', 'father_middle_name', 'father_contact_number',
                 'mother_last_name', 'mother_first_name', 'mother_middle_name', 'mother_contact_number',
-                'guardian_last_name', 'guardian_first_name', 'guardian_middle_name', 'guardian_contact_number'
+                'guardian_last_name', 'guardian_first_name', 'guardian_middle_name', 'guardian_contact_number',
+                'grade_level', 'section_id'
             ]);
 
             $studentFields['is_manually_edited'] = 1;

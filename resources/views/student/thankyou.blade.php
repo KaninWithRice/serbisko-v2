@@ -1,3 +1,6 @@
+@if(!session()->has('user_id'))
+    <script>window.location.href = '/';</script>
+@endif
 <!DOCTYPE html>
 <html lang="en">
 <head>

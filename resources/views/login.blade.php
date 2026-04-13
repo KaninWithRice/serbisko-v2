@@ -160,5 +160,7 @@
 
         </div>
     </div>
+
+    @include('includes.keyboard')
 </body>
 </html>

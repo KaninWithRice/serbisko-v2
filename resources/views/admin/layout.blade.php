@@ -45,6 +45,8 @@
               </div>
         </main>
     </div>
+
+    @include('includes.keyboard')
 </body>
 
 </html>

@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\VerificationController;
 use App\Http\Controllers\Admin\RegistrationSyncController;
 use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\ScanController;
 use App\Http\Controllers\Admin\SyncConflictController;
 use App\Http\Middleware\CheckAdmin;
@@ -62,6 +63,12 @@ Route::middleware([CheckAdmin::class])->group(function () {
         Route::post('/settings/mapping/update', [SettingsController::class, 'updateMapping'])->name('settings.mapping.save');
         Route::get('/conflicts', [SyncConflictController::class, 'index'])->name('syncconflict');
         Route::post('/conflicts/{id}/resolve', [SyncConflictController::class, 'resolve'])->name('admin.conflicts.resolve');
+
+        // Sections Management
+        Route::get('/sections', [SectionController::class, 'index'])->name('sections.index');
+        Route::post('/sections', [SectionController::class, 'store'])->name('sections.store');
+        Route::delete('/sections/{id}', [SectionController::class, 'destroy'])->name('sections.destroy');
+        Route::get('/api/sections', [SectionController::class, 'getSections'])->name('api.sections');
 
     });
 });

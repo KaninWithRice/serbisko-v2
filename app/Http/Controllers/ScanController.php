@@ -18,6 +18,7 @@ class ScanController extends Controller
 
     private function getPrefix($docType) {
         $lowerDoc = strtolower($docType);
+        if (str_contains($lowerDoc, 'sf9 back') || str_contains($lowerDoc, 'report card back')) return 'sf9_back';
         if (str_contains($lowerDoc, 'report') || str_contains($lowerDoc, 'sf9')) return 'sf9';
         if (str_contains($lowerDoc, 'birth') || str_contains($lowerDoc, 'psa')) return 'psa';
         if (str_contains($lowerDoc, 'enrollment') || str_contains($lowerDoc, 'form')) return 'enroll_form';
@@ -34,9 +35,6 @@ class ScanController extends Controller
             Http::timeout(3)->post('http://127.0.0.1:51234/api/door', ['action' => 'close']);
             
             // 2. Trigger Conveyor Belt (w)
-            // Note: arduino_server.py might need a /api/conveyor/w endpoint 
-            // but for now we'll use the existing send_command logic if possible 
-            // or just hit a generic endpoint that we'll add.
             Http::timeout(3)->post('http://127.0.0.1:51234/api/conveyor/w');
             
             Log::info("Arduino Success commands (F + w) sent.");
@@ -108,6 +106,33 @@ class ScanController extends Controller
 
             $prefix = $this->getPrefix($docType);
             Log::info("Using prefix", ['prefix' => $prefix]);
+
+            // --- SPECIAL CASE: SF9 BACK (No verification needed) ---
+            if ($prefix === 'sf9_back') {
+                Log::info("SF9 Back detected. Skipping verification.");
+                DB::table('kiosk_enrollments')->updateOrInsert(
+                    ['student_id' => $studentId],
+                    [
+                        "{$prefix}_path" => $filePath,
+                        "{$prefix}_status" => 'verified',
+                        "{$prefix}_remarks" => 'Stored (No verification required)',
+                        'latest_scan_type' => $docType,
+                        'latest_scan_status' => 'verified',
+                        'latest_scan_remarks' => 'Stored',
+                        'updated_at' => now()
+                    ]
+                );
+
+                // Update scan history
+                DB::table('scans')->where('id', $scanId)->update([
+                    'status' => 'verified',
+                    'remarks' => 'Stored',
+                    'updated_at' => now()
+                ]);
+
+                // Hardware trigger will be handled by the frontend
+                return response()->json(['status' => 'success', 'redirect' => '/student/verifying']);
+            }
 
             $student = Student::find($studentId);
 
@@ -198,13 +223,18 @@ class ScanController extends Controller
 
                 if (isset($ocrResult['success']) && $ocrResult['success'] === true) {
                     $lrn = $ocrResult['lrn'] ?? null;
+                    
+                    // NEW: Update scans history table with LRN if OCR found it
+                    if ($lrn) {
+                        DB::table('scans')->where('id', $scanId)->update(['lrn' => $lrn]);
+                    }
+
                     $isReportCard = (str_contains(strtolower($docType), 'report') || str_contains(strtolower($docType), 'sf9'));
                     
                     if ($lrn && $isReportCard) {
                         Log::info("LRN Found & Doc is Report Card. Preparing LIS call.");
                         
                         DB::table('kiosk_enrollments')->where('student_id', $studentId)->update([
-                            'sf9_lrn' => $lrn, 
                             'sf9_remarks' => 'Sending to LIS...',
                             'student_lrn' => $lrn,
                             'latest_scan_remarks' => 'Sending to LIS...',
@@ -231,7 +261,7 @@ class ScanController extends Controller
                                 'lrn' => $lrn,
                                 'expected_grade' => $expectedGrade,
                                 'webhook_url' => $callbackUrl, 
-                                'scan_id' => $userId
+                                'scan_id' => $scanId // PASS ACTUAL SCAN ID
                             ]);
                             Log::info("LIS Server hit successfully", ['status' => $lisResponse->status()]);
                         } catch (\Exception $e) {
@@ -248,8 +278,14 @@ class ScanController extends Controller
                             'updated_at' => now()
                         ]);
 
-                        // Trigger Arduino SUCCESS (Close + w)
-                        $this->triggerArduinoSuccess();
+                        // NEW: Update scans table status
+                        DB::table('scans')->where('id', $scanId)->update([
+                            'status' => 'verified',
+                            'remarks' => 'Verified',
+                            'updated_at' => now()
+                        ]);
+
+                        // Hardware trigger will be handled by the frontend
                     }
                 }
 
@@ -272,13 +308,16 @@ class ScanController extends Controller
 
     public function lisCallback(Request $request)
     {
-        $userId = $request->input('scan_id');
+        $scanId = $request->input('scan_id');
         $status = $request->input('result'); 
         
-        Log::info("LIS Callback received", ['userId' => $userId, 'status' => $status]);
+        Log::info("LIS Callback received", ['scanId' => $scanId, 'status' => $status]);
 
-        if ($userId && $status) {
-            $studentId = $this->getStudentId($userId);
+        if ($scanId && $status) {
+            $scan = DB::table('scans')->where('id', $scanId)->first();
+            if (!$scan) return response()->json(['success' => false, 'error' => 'Scan record not found'], 404);
+
+            $studentId = $this->getStudentId($scan->user_id);
             $finalStatus = ($status === 'verified_lis') ? 'verified' : 'failed';
             
             if ($finalStatus === 'failed') {
@@ -296,6 +335,13 @@ class ScanController extends Controller
                     'latest_scan_remarks' => $remarks,
                     'updated_at' => now()
                 ]);
+
+                // Update scans table
+                DB::table('scans')->where('id', $scanId)->update([
+                    'status' => $dbStatus,
+                    'remarks' => $remarks,
+                    'updated_at' => now()
+                ]);
             } else {
                 DB::table('kiosk_enrollments')->where('student_id', $studentId)->update([
                     'sf9_status' => 'verified',
@@ -305,8 +351,14 @@ class ScanController extends Controller
                     'updated_at' => now()
                 ]);
 
-                // Trigger Arduino SUCCESS (Close + w)
-                $this->triggerArduinoSuccess();
+                // Update scans table
+                DB::table('scans')->where('id', $scanId)->update([
+                    'status' => 'verified',
+                    'remarks' => 'Verified',
+                    'updated_at' => now()
+                ]);
+
+                // Hardware trigger will be handled by the frontend
             }
             return response()->json(['success' => true]);
         }
@@ -328,12 +380,24 @@ class ScanController extends Controller
         $attemptsCol = "{$prefix}_attempts";
         $attempts = $enrollment->$attemptsCol ?? 0;
 
+        // --- NEW LOGIC: Use the SPECIFIC status for the current document prefix ---
+        $currentStatus = $enrollment->{$prefix . '_status'} ?? 'pending';
+        $currentRemarks = $enrollment->{$prefix . '_remarks'} ?? 'Processing...';
+
+        // --- NEW LOGIC: Determine if hardware should trigger ---
+        // If it's SF9 Front, don't trigger hardware (Wait for the back side)
+        $shouldTriggerHardware = true;
+        if (str_contains(strtolower($docType), 'sf9') && !str_contains(strtolower($docType), 'back')) {
+            $shouldTriggerHardware = false;
+        }
+
         return response()->json([
-            'status' => $enrollment->latest_scan_status ?? 'pending',
-            'remarks' => $enrollment->latest_scan_remarks,
+            'status' => $currentStatus,
+            'remarks' => $currentRemarks,
             'next_url' => $this->getNextUrl($userId),
             'current_doc' => $docType,
-            'attempts' => $attempts
+            'attempts' => $attempts,
+            'should_trigger_hardware' => $shouldTriggerHardware
         ]);
     }
 
@@ -391,20 +455,37 @@ class ScanController extends Controller
     private function getNextUrl($userId) {
         $selectedDocs = session('docs_to_scan', []);
         $currentDoc = session('current_doc');
+        
+        $studentId = $this->getStudentId($userId);
+        $enrollment = DB::table('kiosk_enrollments')->where('student_id', $studentId)->first();
+
+        // --- AUTOMATIC TRANSITION FOR SF9 BACK ---
+        if ($currentDoc && (str_contains(strtolower($currentDoc), 'sf9') && !str_contains(strtolower($currentDoc), 'back'))) {
+             if ($enrollment && $enrollment->sf9_status === 'verified' && ($enrollment->sf9_back_status !== 'verified' && $enrollment->sf9_back_status !== 'manual_verification')) {
+                 return '/student/capture?doc=' . urlencode('Report Card (SF9 Back)');
+             }
+        }
 
         if (!empty($selectedDocs)) {
             $currentIndex = array_search($currentDoc, $selectedDocs);
+            
+            // If current doc was SF9 Back, we need to find the original SF9 entry to find the next item
+            if ($currentIndex === false && str_contains(strtolower($currentDoc), 'sf9 back')) {
+                foreach ($selectedDocs as $idx => $doc) {
+                    if (str_contains(strtolower($doc), 'sf9') && !str_contains(strtolower($doc), 'back')) {
+                        $currentIndex = $idx;
+                        break;
+                    }
+                }
+            }
+
             if ($currentIndex !== false && isset($selectedDocs[$currentIndex + 1])) {
                 $nextDoc = $selectedDocs[$currentIndex + 1];
-                // Do NOT update session(['current_doc']) here! 
-                // Let the capture controller update it when they land on the page.
                 return '/student/capture?doc=' . urlencode($nextDoc);
             }
         }
 
         // Check if EVERYTHING required for their status is verified
-        $studentId = $this->getStudentId($userId);
-        $enrollment = DB::table('kiosk_enrollments')->where('student_id', $studentId)->first();
         if ($enrollment) {
             $enrollController = new \App\Http\Controllers\EnrollmentController();
             $requiredDocs = $enrollController->getRequiredDocs($enrollment->academic_status);
@@ -413,7 +494,18 @@ class ScanController extends Controller
             foreach ($requiredDocs as $label => $prefix) {
                 $statusCol = $prefix . '_status';
                 $status = $enrollment->$statusCol ?? 'pending';
-                if ($status !== 'verified' && $status !== 'manual_verification') {
+                
+                // Special check for SF9: Both Front and Back must be verified
+                if ($prefix === 'sf9') {
+                    if ($status !== 'verified' && $status !== 'manual_verification') {
+                        $allVerified = false;
+                        break;
+                    }
+                    if ($enrollment->sf9_back_status !== 'verified' && $enrollment->sf9_back_status !== 'manual_verification') {
+                        $allVerified = false;
+                        break;
+                    }
+                } elseif ($status !== 'verified' && $status !== 'manual_verification') {
                     $allVerified = false;
                     break;
                 }

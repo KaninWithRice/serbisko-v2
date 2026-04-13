@@ -5,14 +5,16 @@ import cv2
 import numpy as np
 import re
 import difflib 
+import sys
 
 app = Flask(__name__)
 CORS(app)
 
-print("\n" + "="*50)
-print("🟢 [SYSTEM] OCR ENGINE v5.1 ONLINE!")
-print("STRICT VERIFICATION: 55% THRESHOLD ENABLED")
-print("="*50 + "\n")
+def log(msg):
+    print(f"🟢 [OCR-LOG] {msg}", flush=True)
+
+log("OCR ENGINE v6.1 STARTING...")
+log("HIGH-FIDELITY IMAGE ENHANCEMENT + ADAPTIVE PASS ENABLED")
 
 # Global reader
 reader = easyocr.Reader(['en'], gpu=False)
@@ -25,20 +27,13 @@ def clean_text(text):
 
 def fuzzy_match(expected, text):
     if not expected or expected.lower() == 'unknown': return True
-    
-    # 1. Prepare data
     blob = clean_text(text).replace(" ", "")
     parts = clean_text(expected).split()
-    
-    # We check each part of the name (e.g., "Mary", "Grace")
+    log(f"Fuzzy Match check: '{expected}' against blob of length {len(blob)}")
     for part in parts:
         if len(part) < 3: continue
         p_clean = part.replace(" ", "")
-        
-        # Exact match in the spaceless blob (very common for grid forms)
         if p_clean in blob: return True
-        
-        # Fuzzy sliding window (55% threshold as requested)
         window = len(p_clean)
         for i in range(len(blob) - window + 1):
             chunk = blob[i:i+window]
@@ -54,7 +49,7 @@ def ocr():
     first_name = request.form.get('first_name', '').lower()
     last_name = request.form.get('last_name', '').lower()
     
-    print(f"📡 Request: {doc_type.upper()} for {first_name} {last_name}")
+    log(f"RECEIVED REQUEST: {doc_type.upper()} | NAME: {first_name} {last_name}")
 
     try:
         file = request.files['image']
@@ -62,83 +57,118 @@ def ocr():
         img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
         
         if img is None:
-            print("❌ Error: Could not decode image.")
-            return jsonify({'success': False, 'error': 'Invalid image format or corrupted file.'}), 400
+            return jsonify({'success': False, 'error': 'Invalid image format.'}), 400
 
-        # --- ENHANCED PRE-PROCESSING ---
-        # 1. Sharpening (Helps with text clarity)
-        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-        sharpened = cv2.filter2D(img, -1, kernel)
+        # --- HIGH-QUALITY PRE-PROCESSING PIPELINE ---
         
-        # 2. Grayscale & Contrast
-        gray = cv2.cvtColor(sharpened, cv2.COLOR_BGR2GRAY)
-        processed = cv2.convertScaleAbs(gray, alpha=1.5, beta=0) # Slightly higher contrast
+        # 1. Resize if too large
+        h, w = img.shape[:2]
+        if max(h, w) > 3000:
+            scale = 3000 / max(h, w)
+            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
 
-        # Sequential Scanning (Stop early if document type is found)
+        # 2. Denoising
+        denoised = cv2.fastNlMeansDenoisingColored(img, None, 10, 10, 7, 21)
+        gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
+        
+        # Pass 1: CLAHE Enhanced
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
+
+        # Pass 2: Adaptive Thresholding (Stronger for high-contrast text)
+        thresh = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+
+        # Pass 3: Sharpened
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        sharpened = cv2.filter2D(enhanced, -1, kernel)
+
+        # Sequential Scanning
         best_text = ""
         found_doc = False
         
-        for rot in [None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE]:
-            rotated = processed if rot is None else cv2.rotate(processed, rot)
-            results = reader.readtext(rotated, detail=0, paragraph=True)
-            text = " ".join(results).lower()
+        # We try 3 different image versions to catch the best OCR
+        for p_idx, proc_img in enumerate([enhanced, thresh, sharpened]):
+            if found_doc: break
+            p_name = ["ENHANCED", "THRESHOLD", "SHARPENED"][p_idx]
+            log(f"Starting Scan Pass: {p_name}")
             
-            # Step 1: Identify Document Type
-            is_match = False
-            if 'report' in doc_type or 'sf9' in doc_type:
-                if any(k in text for k in ['sf9', 'report card', 'form 9']): is_match = True
-            elif 'birth' in doc_type or 'psa' in doc_type:
-                if any(k in text for k in ['birth', 'psa', 'nso', 'registry']): is_match = True
-            elif 'enroll' in doc_type:
-                if any(k in text for k in ['enrollment', 'basic education', 'learner information', 'beal']): is_match = True
-            elif 'als' in doc_type:
-                if any(k in text for k in ['als', 'alternative learning', 'rating']): is_match = True
-            elif 'moral' in doc_type:
-                if any(k in text for k in ['moral', 'character']): is_match = True
-            else:
-                is_match = True # Generic fallback
-            
-            if is_match:
-                best_text = text
-                found_doc = True
-                break
-            
-            if len(text) > len(best_text): best_text = text
-
-        print(f"📄 Found Text: {best_text[:150]}...")
+            # Try 4 orientations
+            for r_idx, rot in enumerate([None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE]):
+                r_name = ["0°", "90°", "180°", "270°"][r_idx]
+                rotated = proc_img if rot is None else cv2.rotate(proc_img, rot)
+                results = reader.readtext(rotated, detail=0, paragraph=True)
+                text = " ".join(results).lower()
+                clean_blob = text.replace(" ", "")
+                
+                log(f"OCR ({p_name} @ {r_name}): Read {len(text)} chars. Snippet: {text[:80]}")
+                
+                # Logic: Check document type keywords
+                is_match = False
+                if 'report' in doc_type or 'sf9' in doc_type:
+                    keywords = ['sf9', 'reportcard', 'form9', 'deped', 'republicofthephilippines', 'attendance', 'progressreport', 'learnerinformation']
+                    if any(k in clean_blob for k in keywords): is_match = True
+                elif 'birth' in doc_type or 'psa' in doc_type:
+                    keywords = ['birth', 'psa', 'nso', 'registry', 'certificateoflive', 'civilregistrar', 'republicofthephilippines']
+                    if any(k in clean_blob for k in keywords): is_match = True
+                elif 'enroll' in doc_type:
+                    keywords = ['enrollment', 'basiceducation', 'learnerinformation', 'beal', 'personaldata', 'deped']
+                    if any(k in clean_blob for k in keywords): is_match = True
+                elif 'als' in doc_type:
+                    keywords = ['als', 'alternativelearning', 'rating', 'certificateofcompletion', 'deped']
+                    if any(k in clean_blob for k in keywords): is_match = True
+                elif 'moral' in doc_type:
+                    keywords = ['moral', 'character', 'recommendation', 'goodbehavior', 'conduct']
+                    if any(k in clean_blob for k in keywords): is_match = True
+                else:
+                    is_match = True 
+                
+                if is_match:
+                    log(f"DOCUMENT MATCH FOUND ({p_name} @ {r_name})!")
+                    best_text = text
+                    found_doc = True
+                    break
+                
+                if len(text) > len(best_text): best_text = text
 
         if not found_doc:
-            return jsonify({'success': False, 'error': f"Document mismatch. Please scan your {doc_type.replace('_', ' ').title()}."})
+            log("DOCUMENT TYPE MISMATCH - No keywords found in any pass.")
+            return jsonify({'success': False, 'error': f"Document mismatch. Ensure the {doc_type.replace('_', ' ').title()} is well-lit and flat."})
 
         # Step 2: Verify LRN (For Report Card only)
         if 'report' in doc_type or 'sf9' in doc_type:
-            lrn = None
-            keyword_match = re.search(r'(lrn|learner|reference|id|no)', best_text)
-            if keyword_match:
-                after_text = best_text[keyword_match.end():keyword_match.end()+50]
-                digits_near = re.sub(r'\D', '', after_text)
-                if len(digits_near) >= 12: lrn = digits_near[:12]
-            
-            if not lrn:
-                all_digits = re.findall(r'\d{12}', re.sub(r'\D', '', best_text))
-                if all_digits: lrn = all_digits[0]
-
-            if not lrn: return jsonify({'success': False, 'error': "SF9 found, but 12-digit LRN is unreadable."})
-            return jsonify({'success': True, 'lrn': lrn, 'message': "SF9 and LRN Verified!"})
+            clean_blob = best_text.replace(" ", "").replace(":", "").replace("-", "")
+            log("Extracting LRN from blob...")
+            # Look for 12 digits
+            lrn_matches = re.findall(r'\d{12}', clean_blob)
+            if lrn_matches:
+                lrn = lrn_matches[0]
+                log(f"LRN VERIFIED: {lrn}")
+                return jsonify({'success': True, 'lrn': lrn, 'message': "SF9 and LRN Verified!"})
+            else:
+                log("LRN NOT FOUND in text.")
+                return jsonify({'success': False, 'error': "SF9 found, but 12-digit LRN is unreadable. Please ensure it is sharp."})
         
-        # Step 3: Verify First Name (55% Threshold)
+        # Step 3: Verify Names
+        log("Verifying Student Name...")
         if not fuzzy_match(first_name, best_text):
-            return jsonify({'success': False, 'error': f"Document type correct, but First Name ({first_name}) missing."})
-        
-        # Step 4: Verify Last Name (55% Threshold)
+            log(f"First Name '{first_name}' mismatch.")
+            return jsonify({'success': False, 'error': f"Document found, but First Name ({first_name}) missing."})
         if not fuzzy_match(last_name, best_text):
-            return jsonify({'success': False, 'error': f"First Name found, but Last Name ({last_name}) is missing or unreadable."})
+            log(f"Last Name '{last_name}' mismatch.")
+            return jsonify({'success': False, 'error': f"Document found, but Last Name ({last_name}) missing."})
             
+        log("SUCCESS: Document fully verified.")
         return jsonify({'success': True, 'message': f"{doc_type.replace('_', ' ').title()} Verified!"})
 
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        log(f"FATAL ERROR: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/status')
+def status(): return jsonify({'status': 'online'})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=9001, threaded=True)
 
 @app.route('/status')
 def status(): return jsonify({'status': 'online'})

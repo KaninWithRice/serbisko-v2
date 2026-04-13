@@ -41,7 +41,17 @@
                     @php
                         $statusCol = $prefix . '_status';
                         $status = $enrollment->$statusCol ?? 'pending';
+                        
+                        // SPECIAL CASE: SF9 consolidated check
                         $isAlreadySubmitted = ($status === 'verified' || $status === 'manual_verification');
+                        
+                        if ($prefix === 'sf9' && $isAlreadySubmitted) {
+                            // Also check the back side
+                            $backStatus = $enrollment->sf9_back_status ?? 'pending';
+                            if ($backStatus !== 'verified' && $backStatus !== 'manual_verification') {
+                                $isAlreadySubmitted = false;
+                            }
+                        }
                     @endphp
 
                     <label class="flex items-start gap-4 cursor-pointer group p-3 rounded-lg transition border {{ $isAlreadySubmitted ? 'bg-green-50 border-green-200' : 'hover:bg-gray-50 border-transparent hover:border-gray-200' }}">

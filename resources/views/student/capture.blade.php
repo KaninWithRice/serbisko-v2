@@ -118,7 +118,7 @@
             </div>
 
             <div class="mt-8 flex justify-center gap-6">
-                <a href="{{ url('/student/checklist') }}" class="bg-white border-2 border-blue-900 text-blue-900 font-bold text-lg px-12 py-4 rounded-full hover:bg-gray-50 transition transform hover:scale-105 tracking-wide">
+                <a id="back-link" href="{{ url('/student/checklist') }}" class="bg-white border-2 border-blue-900 text-blue-900 font-bold text-lg px-12 py-4 rounded-full hover:bg-gray-50 transition transform hover:scale-105 tracking-wide">
                     BACK
                 </a>
                 <form id="uploadForm" action="{{ url('/student/save-image') }}" method="POST">
@@ -135,6 +135,33 @@
     </div>
 
     <script>
+        // 0. HANDLE BACK BUTTON - CLOSE DOOR
+        const backLink = document.getElementById('back-link');
+        if (backLink) {
+            backLink.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const targetUrl = backLink.href;
+                
+                // Show a brief "Closing..." status if you want, but immediate redirect is better
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 1500); // 1.5s timeout
+                    
+                    await fetch('http://127.0.0.1:51234/api/door/close', { 
+                        method: 'POST',
+                        signal: controller.signal,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'close' })
+                    });
+                    clearTimeout(timeoutId);
+                } catch (err) {
+                    console.error("Hardware Close Error:", err);
+                } finally {
+                    window.location.href = targetUrl;
+                }
+            });
+        }
+
         // 1. SERVER PINGING LOGIC (RUNS ONCE)
         const SERVERS = {
             ocr: { url: 'http://127.0.0.1:9001/status', method: 'GET', label: 'OCR Engine' },

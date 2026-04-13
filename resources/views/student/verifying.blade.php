@@ -44,6 +44,7 @@
             </div>
         </div>
         <h2 id="success-title" class="text-3xl font-bold text-green-700 mb-2">Document Verified!</h2>
+        <p id="success-message" class="text-gray-600 font-medium"></p>
     </div>
 
     <div id="storing-card" class="bg-white p-10 rounded-3xl shadow-2xl text-center max-w-lg w-full hidden absolute transform transition-all duration-500 scale-95 opacity-0">
@@ -84,12 +85,25 @@
                     if (data.status === 'verified_lis' || data.status === 'verified' || data.status === 'manual_approved') {
                         clearInterval(pollInterval);
                         document.getElementById('success-title').innerText = (data.current_doc || "Document") + " Verified!";
-                        document.getElementById('storing-subtext').innerText = data.next_url.includes('thankyou') ? "All documents complete! Finishing up..." : "Preparing next document scan...";
-
-                        showCard('success-card');
                         
-                        // --- PHYSICAL HARDWARE TRIGGER ---
-                        triggerHardwareConveyor(data.next_url);
+                        // --- HANDLING FRONT TO BACK TRANSITION ---
+                        if (data.should_trigger_hardware === false) {
+                            // SF9 Front side done, don't move conveyor!
+                            document.getElementById('success-message').innerText = "Front side verified. Please FLIP the card to scan the back side.";
+                            showCard('success-card');
+                            
+                            // Just redirect after a short delay
+                            setTimeout(() => {
+                                window.location.href = data.next_url;
+                            }, 4000);
+                        } else {
+                            // Standard hardware trigger
+                            document.getElementById('storing-subtext').innerText = data.next_url.includes('thankyou') ? "All documents complete! Finishing up..." : "Preparing next document scan...";
+                            showCard('success-card');
+                            
+                            // --- PHYSICAL HARDWARE TRIGGER ---
+                            triggerHardwareConveyor(data.next_url);
+                        }
                     } 
                     // Waiting for Admin
                     else if (data.status === 'manual_verification') {
@@ -112,59 +126,84 @@
                 .catch(err => console.error("Error checking status:", err));
         }
 
-        function triggerHardwareConveyor(nextUrl) {
-            // 1. Send 'W' command to Arduino via Python Server
-            fetch('http://127.0.0.1:51234/api/conveyor/w', { method: 'POST' })
-                .then(() => {
-                    console.log("📡 Hardware Sorting Triggered (W command sent)");
-                    sortingActive = true;
-                    
-                    // 2. Transition to Storing Card
-                    setTimeout(() => {
-                        showCard('storing-card');
-                        document.getElementById('progress-bar').classList.add('animate-loading-bar');
-                    }, 2000);
+        async function triggerHardwareConveyor(nextUrl) {
+            console.log("🏁 Starting Hardware Sequence...");
+            sortingActive = true;
 
-                    // 3. Start Polling for physical PAPER_REJECTED signal during the 10s sorting window
-                    hardwarePollInterval = setInterval(() => {
-                        checkHardwareRejection();
-                    }, 1000);
+            try {
+                // 1. Close Slot Door First (f command)
+                console.log("📡 Closing Slot Door...");
+                await fetch('http://127.0.0.1:51234/api/door/close', { method: 'POST' });
+                
+                // Small delay to ensure door is closed before conveyor starts
+                await new Promise(resolve => setTimeout(resolve, 500));
 
-                    // 4. Set final redirect timer (12 seconds total for sorting)
-                    setTimeout(() => {
-                        if (sortingActive) {
-                            clearInterval(hardwarePollInterval);
-                            window.location.href = nextUrl;
-                        }
-                    }, 12000); 
-                })
-                .catch(err => {
-                    console.error("⚠️ Hardware Link Offline:", err);
-                    // Fallback: Continue without hardware if offline
-                    setTimeout(() => {
-                        showCard('storing-card');
-                        document.getElementById('progress-bar').classList.add('animate-loading-bar');
-                        setTimeout(() => { window.location.href = nextUrl; }, 10000);
-                    }, 2000);
-                });
+                // 2. Send 'W' command to Arduino via Python Server
+                console.log("📡 Triggering Conveyor (W)...");
+                await fetch('http://127.0.0.1:51234/api/conveyor/w', { method: 'POST' });
+                
+                // 3. Transition UI to Storing Card
+                setTimeout(() => {
+                    showCard('storing-card');
+                    document.getElementById('progress-bar').classList.add('animate-loading-bar');
+                }, 1000);
+
+                // 4. Start Polling for physical signals (to record in DB), 
+                // but NO LONGER reacts by logging out.
+                hardwarePollInterval = setInterval(() => {
+                    checkHardwareRejection();
+                }, 1000);
+
+                // 5. Final redirect timer (12 seconds total for sorting)
+                setTimeout(() => {
+                    if (sortingActive) {
+                        if (hardwarePollInterval) clearInterval(hardwarePollInterval);
+                        window.location.href = nextUrl;
+                    }
+                }, 12000); 
+            } catch (err) {
+                console.error("⚠️ Hardware Link Error:", err);
+                // Fallback: Continue to next page anyway
+                setTimeout(() => { window.location.href = nextUrl; }, 5000);
+            }
         }
 
         function checkHardwareRejection() {
+            // We still poll this so the Laravel controller can record the rejection event in the database
+            // for the Admin to see, but we NO LONGER stop the flow or logout.
             fetch('/student/check-rejection')
                 .then(res => res.json())
                 .then(data => {
                     if (data.rejected) {
-                        console.log("🚨 PHYSICAL REJECTION DETECTED!");
-                        sortingActive = false;
-                        clearInterval(hardwarePollInterval);
-                        showCard('halted-card');
-                        
-                        // Force logout after detection to clear state
-                        setTimeout(() => { window.location.href = '/logout'; }, 8000);
+                        console.log("ℹ️ Paper path signal detected (recorded for admin). Continuing flow...");
+                        // No longer calling logout or showing halted card here.
                     }
                 })
-                .catch(err => console.error("Hardware poll error:", err));
+                .catch(err => console.warn("Background hardware poll suppressed error:", err));
         }
+
+        function showCard(cardId) {
+            const cards = ['loading-card', 'admin-review-card', 'success-card', 'storing-card', 'error-card', 'halted-card'];
+            cards.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el.classList.contains('hidden') && id !== cardId) {
+                    el.classList.remove('scale-100', 'opacity-100');
+                    el.classList.add('scale-95', 'opacity-0');
+                    setTimeout(() => el.classList.add('hidden'), 500);
+                }
+            });
+            setTimeout(() => {
+                const target = document.getElementById(cardId);
+                target.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    target.classList.remove('scale-95', 'opacity-0');
+                    target.classList.add('scale-100', 'opacity-100');
+                });
+            }, 500); 
+        }
+
+        pollInterval = setInterval(checkStatus, 2000);
+    </script>
 
         function showCard(cardId) {
             const cards = ['loading-card', 'admin-review-card', 'success-card', 'storing-card', 'error-card', 'halted-card'];

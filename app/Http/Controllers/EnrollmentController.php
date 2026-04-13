@@ -117,6 +117,13 @@ class EnrollmentController extends Controller
         $userId = $this->getUserId();
         if (!$userId) return redirect('/login');
 
+        // Safety Fallback: Close the slot door whenever they land back on the checklist
+        try {
+            Http::timeout(2)->post('http://127.0.0.1:51234/api/door', ['action' => 'close']);
+        } catch (\Exception $e) {
+            // Silently fail if Arduino is offline
+        }
+
         $student = $this->getStudent($userId);
         if (!$student) return redirect('/login');
 
@@ -172,6 +179,13 @@ class EnrollmentController extends Controller
             
             if ($status !== 'verified' && $status !== 'manual_verification') {
                 $toScan[] = $docName;
+            } elseif ($prefix === 'sf9') {
+                // SPECIAL CASE: SF9 FRONT IS DONE, CHECK IF BACK IS DONE
+                $backStatus = $enrollment->sf9_back_status ?? 'pending';
+                if ($backStatus !== 'verified' && $backStatus !== 'manual_verification') {
+                    // Start from the back
+                    $toScan[] = 'Report Card (SF9 Back)';
+                }
             }
         }
 
@@ -188,6 +202,7 @@ class EnrollmentController extends Controller
 
     private function getPrefix($docType) {
         $lowerDoc = strtolower($docType);
+        if (str_contains($lowerDoc, 'sf9 back') || str_contains($lowerDoc, 'report card back')) return 'sf9_back';
         if (str_contains($lowerDoc, 'report') || str_contains($lowerDoc, 'sf9')) return 'sf9';
         if (str_contains($lowerDoc, 'birth') || str_contains($lowerDoc, 'psa')) return 'psa';
         if (str_contains($lowerDoc, 'enrollment') || str_contains($lowerDoc, 'form')) return 'enroll_form';

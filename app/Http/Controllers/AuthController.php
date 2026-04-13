@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -101,6 +103,13 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        // Safety: Try to close the slot door on logout
+        try {
+            Http::timeout(2)->post('http://127.0.0.1:51234/api/door', ['action' => 'close']);
+        } catch (\Exception $e) {
+            Log::error("Arduino Offline (Logout Close): " . $e->getMessage());
+        }
+
         $request->session()->forget(['user_id', 'user_role', 'user_name']);
 
         // Standard Laravel logout

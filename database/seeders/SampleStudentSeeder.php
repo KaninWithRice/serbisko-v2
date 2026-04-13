@@ -33,7 +33,7 @@ class SampleStudentSeeder extends Seeder
         DB::table('kiosk_enrollments')->truncate();
         DB::table('scans')->truncate();
         DB::table('pre_enrollments')->truncate();
-        User::where('role', 'student')->delete();
+        User::where('role', 'student')->forceDelete();
         DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         $sampleImages = Storage::disk('public')->files('scans');
@@ -50,11 +50,16 @@ class SampleStudentSeeder extends Seeder
 
         // 1. Create 4 Registered Students (One of each Kind)
         foreach ($studentKinds as $index => $kind) {
+            $firstName = ($index === 0) ? 'Mary Grace' : $faker->firstName;
+            $lastName = ($index === 0) ? 'Dellomos' : $faker->lastName;
+            $middleName = ($index === 0) ? null : $faker->lastName;
+            $birthday = ($index === 0) ? '0202-02-02' : $faker->date('Y-m-d', '2009-12-31');
+
             $user = User::create([
-                'first_name' => $faker->firstName,
-                'last_name' => $faker->lastName,
-                'middle_name' => $faker->lastName,
-                'birthday' => $faker->date('Y-m-d', '2009-12-31'),
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'middle_name' => $middleName,
+                'birthday' => $birthday,
                 'role' => 'student',
                 'password' => Hash::make('password'),
             ]);

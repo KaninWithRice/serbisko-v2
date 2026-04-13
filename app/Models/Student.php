@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Student extends Model
 {
     protected $fillable = [
-        'user_id', 'lrn', 'school_year', 'is_manually_edited',
+        'user_id', 'lrn', 'school_year', 'is_manually_edited', 'grade_level', 'section_id',
         'sex', 'age', 'place_of_birth', 'mother_tongue',
         'curr_house_number', 'curr_street', 'curr_barangay', 'curr_city', 'curr_province', 'curr_zip_code', 'curr_country',
         'is_perm_same_as_curr', 'perm_house_number', 'perm_street', 'perm_barangay', 'perm_city', 'perm_province', 'perm_zip_code', 'perm_country',
@@ -22,6 +22,11 @@ class Student extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function section(): BelongsTo
+    {
+        return $this->belongsTo(Section::class);
     }
 
     public function kioskEnrollment(): HasOne
