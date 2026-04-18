@@ -34,13 +34,20 @@ return new class extends Migration {
             $table->enum('status', ['pending', 'resolved', 'ignored'])->default('pending');
             $table->string('resolution_action')->nullable(); 
             
-            $table->foreignId('resolved_by')->nullable()->constrained('users');
+            $table->foreignId('resolved_by')
+                ->nullable()
+                ->constrained('users')
+                ->onDelete('set null');
             $table->timestamp('resolved_at')->nullable();
             $table->text('resolution_notes')->nullable();
             
             $table->timestamps();
+
+            // Prevents duplicate conflict rows for the same student+year
+            $table->unique(['lrn', 'school_year']);
             
-            $table->index(['lrn', 'school_year', 'status']);
+            // Primary dashboard query: show all pending conflicts
+            $table->index(['lrn', 'school_year', 'status', 'conflict_type']);
         });
     }
     
