@@ -27,3 +27,4 @@ Thumbs.db
 bridge/.env
 bridge/serviceAccountKey.json
 bridge/node_modules/
+app/serviceAccountKey.json

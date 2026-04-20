@@ -76,7 +76,7 @@
                     </a>
                 </li>
 
-                <li>
+                {{-- <li>
                     <a href="{{ route('admin.settings.show') }}" class="flex items-center gap-10 px-4 py-3 text-[#003918] font-semibold rounded-xl hover:bg-[#00923F]/5 transition-colors group {{ isActive('admin.syncconfiguration') }}">
                         <div class="w-6 flex justify-center shrink-0">
                             <svg class="w-6 h-6 fill-current opacity-80 group-hover:opacity-100" viewBox="0 0 24 24">
@@ -86,9 +86,9 @@
                         </div>
                         <span class="leading-tight">Sync Configuration</span>
                     </a>
-                </li>
+                </li> --}}
 
-                <li>
+                {{--<li>
                     <a href="{{ route('admin.systemsync') }}" class="flex items-center gap-10 px-4 py-3 text-[#003918] font-semibold rounded-xl hover:bg-[#00923F]/5 transition-colors group {{ isActive('admin.systemsync') }}">
                         <div class="w-6 flex justify-center shrink-0">
                             <svg class="w-6 h-6 fill-current opacity-80 group-hover:opacity-100" viewBox="0 0 30 30">
@@ -97,8 +97,20 @@
                         </div>
                         <span class="leading-tight">System Sync</span>
                     </a>
-                </li>
+                </li> --}}
                 <li>
+                    <a href="{{ route('admin.forms.index') }}"
+                    class="flex items-center gap-10 px-4 py-3 text-[#003918] font-semibold rounded-xl hover:bg-[#00923F]/5 transition-colors group
+                            {{ request()->is('admin/forms*') ? 'bg-[#00923F]/10 text-[#00923F] border-l-4 border-[#00923F]' : '' }}">
+                        <div class="w-6 flex justify-center shrink-0">
+                            <svg class="w-5 h-5 fill-current opacity-80 group-hover:opacity-100" viewBox="0 0 24 24">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM8 13h8v1H8v-1zm0 2h8v1H8v-1zm0 2h5v1H8v-1z"/>
+                            </svg>
+                        </div>
+                        <span class="leading-tight">Form Builder</span>
+                    </a>
+                </li>
+                <li> 
                     <a href="{{ route('admin.syncconflict') }}" class="flex items-center gap-10 px-4 py-3 text-[#003918] font-semibold rounded-xl hover:bg-[#00923F]/5 transition-colors group {{ isActive('admin.syncconflict') }}">
                         <div class="w-6 flex justify-center shrink-0">
                             <<svg class="w-6 h-6 fill-current opacity-80 group-hover:opacity-100" viewBox="0 0 30 30">

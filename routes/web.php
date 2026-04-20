@@ -13,6 +13,7 @@ use App\Http\Controllers\ScanController;
 use App\Http\Controllers\Admin\SyncConflictController;
 use App\Http\Middleware\CheckAdmin;
 use App\Http\Controllers\EnrollmentController;
+use App\Http\Controllers\Admin\FormBuilderController;
 use Illuminate\Support\Facades\DB;
 
 /*
@@ -69,6 +70,15 @@ Route::middleware([CheckAdmin::class])->group(function () {
         Route::post('/sections', [SectionController::class, 'store'])->name('sections.store');
         Route::delete('/sections/{id}', [SectionController::class, 'destroy'])->name('sections.destroy');
         Route::get('/api/sections', [SectionController::class, 'getSections'])->name('api.sections');
+
+        // Form Builder
+        Route::get('/forms',                [FormBuilderController::class, 'index'])->name('forms.index');
+        Route::get('/forms/create',         [FormBuilderController::class, 'create'])->name('forms.create');
+        Route::post('/forms',               [FormBuilderController::class, 'store'])->name('forms.store');
+        Route::get('/forms/{form}',         [FormBuilderController::class, 'show'])->name('forms.show');
+        Route::get('/forms/{form}/edit',    [FormBuilderController::class, 'edit'])->name('forms.edit');
+        Route::put('/forms/{form}',         [FormBuilderController::class, 'update'])->name('forms.update');
+        Route::delete('/forms/{form}',      [FormBuilderController::class, 'destroy'])->name('forms.destroy');
 
     });
 });

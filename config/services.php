@@ -39,4 +39,8 @@ return [
     'service_account_email' => env('GOOGLE_SERVICE_ACCOUNT_EMAIL', 'your-default-email@iam.gserviceaccount.com'),
     ],
 
+    'firebase' => [
+    'project_id' => env('FIREBASE_PROJECT_ID'),
+    ],
+
 ];
