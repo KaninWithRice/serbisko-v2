@@ -89,6 +89,11 @@ class AuthController extends Controller
         Session::put('user_role', $role); 
         Session::put('user_name', $user->first_name);
 
+        // Check for First Login (Student only)
+        if ($role === 'student' && is_null($user->password_changed_at)) {
+            return redirect('/first-login');
+        }
+
         if (in_array($role, ['admin', 'super_admin', 'facilitator'])) {
             return redirect('/dashboard'); 
         }
@@ -105,6 +110,39 @@ class AuthController extends Controller
         return $hasEnrollment 
             ? redirect('/student/checklist') 
             : redirect('/student/grade-selection');
+    }
+
+    public function showFirstLogin()
+    {
+        if (!Auth::check() || Auth::user()->role !== 'student' || !is_null(Auth::user()->password_changed_at)) {
+            return redirect('/');
+        }
+        return view('auth.first-login');
+    }
+
+    public function forceChangePassword(Request $request)
+    {
+        $request->validate([
+            'new_password' => [
+                'required',
+                'confirmed',
+                Password::min(8)->letters()->mixedCase()->numbers()->symbols(),
+            ],
+        ], [
+            'new_password.required' => 'New password is required.',
+            'new_password.confirmed' => 'Passwords do not match.',
+        ]);
+
+        $user = Auth::user();
+        $user->password = Hash::make($request->new_password);
+        $user->password_changed_at = now();
+        $user->save();
+
+        // Logout after password change
+        Auth::logout();
+        Session::flush();
+
+        return redirect('/login')->with('success', 'Password updated successfully. Please log in with your new password.');
     }
 
     public function logout(Request $request)

@@ -243,6 +243,16 @@ class StudentController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // Calculate if all documents are verified
+        $status = strtolower($finalStatus ?? 'regular');
+        $requiredDocsCount = 3; // Default for regular
+        if (str_contains($status, 'als')) {
+            $requiredDocsCount = 4;
+        } elseif (str_contains($status, 'feree') || str_contains($status, 'balik')) {
+            $requiredDocsCount = 4;
+        }
+        $isAllVerified = $verifiedScans->count() >= $requiredDocsCount;
+
         // 5. Fetch Sections data for the profile
         $academicYears = \App\Models\Section::distinct()->pluck('academic_year')->toArray();
         $settings = \App\Models\CustomForm::latest()->first();
@@ -255,7 +265,7 @@ class StudentController extends Controller
         return view('admin.studentpage.profilepage', compact(
             'student', 'details', 'dynamicDetails', 
             'finalGrade', 'finalTrack', 'finalCluster', 'finalStatus',
-            'verifiedScans', 'academicYears', 'activeSY'
+            'verifiedScans', 'academicYears', 'activeSY', 'isAllVerified'
         ));
     }
 

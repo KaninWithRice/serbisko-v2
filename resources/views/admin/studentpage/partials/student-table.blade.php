@@ -74,7 +74,7 @@
                         <td class="py-3 px-4 text-center">
                             <a href="{{ route('admin.studentpage.profilepage', ['id' => $student->id]) }}" 
                                class="text-[10px] font-bold uppercase tracking-wider text-[#005288] hover:text-[#00923F] hover:underline transition-colors">
-                                View Profile
+                                Enroll
                             </a>
                         </td>
                     </tr>

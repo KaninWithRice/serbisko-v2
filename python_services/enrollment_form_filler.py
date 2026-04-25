@@ -65,14 +65,14 @@ def get_firefox_options():
     if firefox_path:
         options.binary_location = firefox_path
     
-    # Speed Optimization: Disable images and heavy assets
+    # Speed Optimization
     options.set_preference("permissions.default.image", 2)
     options.set_preference("dom.ipc.plugins.enabled.libflashplayer.so", "false")
     options.set_preference("dom.webdriver.enabled", False)
     options.set_preference("useAutomationExtension", False)
     return options
 
-# --- ROBUT NAVIGATION HELPERS FROM deped_lis_navigation.py ---
+# --- ROBOT NAVIGATION HELPERS ---
 
 def click_smart(driver, wait, xpaths, name):
     """Robust clicking with multiple XPaths and standard/JS fallback."""
@@ -95,11 +95,10 @@ def type_slowly(element, text):
     element.clear()
     for char in str(text):
         element.send_keys(char)
-        time.sleep(0.01) # Reduced from 0.05
-    time.sleep(0.1) # Reduced from 0.5
+        time.sleep(0.01)
+    time.sleep(0.1)
 
 def find_field_by_html(driver, name_or_id):
-    """Finds field strictly based on the provided HTML structure. Handles hidden selects for Select2."""
     selectors = [
         f"//*[@name='{name_or_id}']",
         f"//*[@id='{name_or_id}']",
@@ -116,7 +115,6 @@ def find_field_by_html(driver, name_or_id):
     return None
 
 def wait_for_options(driver, el, timeout=10):
-    """Wait until a select element has more than one option (beyond the placeholder)."""
     try:
         WebDriverWait(driver, timeout).until(
             lambda d: len(Select(el).options) > 1
@@ -126,7 +124,6 @@ def wait_for_options(driver, el, timeout=10):
         return False
 
 def select2_set_value(driver, select_el, value):
-    """Directly sets Select2 value and triggers the 'select2:select' event with required params."""
     try:
         option_data = driver.execute_script("""
             var sel = arguments[0];
@@ -162,7 +159,6 @@ def select2_set_value(driver, select_el, value):
         return False
 
 def fill_field_smart(driver, wait, target_name, value, is_dropdown=False):
-    """Intelligently fills fields using native interaction or jQuery/Select2 injection."""
     if not value: return False
     
     if not is_dropdown and target_name.lower() not in ['email', 'lrn', 'zip']:
@@ -181,7 +177,7 @@ def fill_field_smart(driver, wait, target_name, value, is_dropdown=False):
             if "select2-hidden-accessible" in el.get_attribute("class") or is_dropdown:
                 if wait_for_options(driver, el, timeout=5):
                     if select2_set_value(driver, el, value):
-                        time.sleep(0.3) # Wait for dependent logic
+                        time.sleep(0.3)
                         return True
             
             if el.tag_name.lower() == "input":
@@ -202,8 +198,7 @@ def automate_enrollment(student_data):
     
     lrn = student_data.get('lrn')
     section_name = student_data.get('section_name')
-    grade_level = student_data.get('grade_level')
-
+    
     print(f"\n[START] Automation for LRN: {lrn} | Target Section: {section_name}")
     
     try:
@@ -318,7 +313,7 @@ def automate_enrollment(student_data):
         fill_field_smart(driver, wait, "email", data['email'])
         fill_field_smart(driver, wait, "citizenship", data['citizenship'], True)
 
-        # --- RESIDENCY (STRICT SEQUENCE) ---
+        # --- RESIDENCY ---
         for pre in ['current', 'permanent']:
             fill_field_smart(driver, wait, pre + 'Province', data['province'], True)
             fill_field_smart(driver, wait, pre + 'City', data['city'], True)
@@ -365,5 +360,5 @@ def status():
     return jsonify({'status': 'online', 'driver_active': active_driver is not None})
 
 if __name__ == '__main__':
-    print('[INFO] Enrollment Automation Service on http://127.0.0.1:5002')
-    app.run(host='127.0.0.1', port=5002)
+    print('[INFO] Enrollment Automation Service starting (Firefox Mode)...')
+    app.run(host='0.0.0.0', port=5002)

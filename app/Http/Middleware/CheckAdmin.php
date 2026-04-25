@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class CheckAdmin
 {
@@ -16,19 +17,26 @@ class CheckAdmin
             return $next($request);
         }
 
-        $userId = Session::get('user_id');
-        $userRole = strtolower(Session::get('user_role')); // Normalize to lowercase
-
         // 2. Auth Check
-        if (!$userId) {
-            return redirect('/')->withErrors(['message' => 'Please login first.']);
+        if (!Auth::check()) {
+            return redirect('/login')->withErrors(['message' => 'Please login first.']);
+        }
+
+        $user = Auth::user();
+        $userRole = strtolower($user->role);
+
+        // Check if account is revoked (Soft Deleted)
+        if ($user->trashed()) {
+            Auth::logout();
+            Session::flush();
+            return redirect('/login')->withErrors(['message' => 'Your access has been revoked.']);
         }
 
         // 3. Path-Based Permission Check
         if ($request->is('student/*') || $request->is('api/*')) {
             // Students, Admins, and Facilitators can all access the kiosk
             if (!in_array($userRole, ['student', 'admin', 'super_admin', 'facilitator'])) {
-                return redirect('/')->withErrors(['message' => 'Unauthorized student access.']);
+                return redirect('/login')->withErrors(['message' => 'Unauthorized student access.']);
             }
         } else {
             // STRICT: Only Staff can access non-student routes (Dashboard, etc.)
@@ -36,13 +44,41 @@ class CheckAdmin
                 // If a student tries to go to /dashboard, send them back to the kiosk
                 return redirect('/student/grade-selection')->withErrors(['message' => 'Access Denied.']);
             }
-        }
 
-        // 4. The "Kill Switch"
-        $user = DB::table('users')->where('id', $userId)->whereNull('deleted_at')->first();
-        if (!$user) {
-            Session::flush();
-            return redirect('/')->withErrors(['message' => 'Your access has been revoked.']);
+            // Role-based Restrictions
+            if ($userRole === 'facilitator') {
+                // Facilitator can only access dashboard, students, sections, and notifications
+                $allowedPaths = [
+                    'dashboard',
+                    'admin/dashboard',
+                    'admin/students*',
+                    'admin/sections*',
+                    'admin/notifications*',
+                    'admin/accountsettings', 
+                    'admin/settings/security', 
+                    'admin/account/update-password',
+                    'check-user-status/*',
+                    'admin/api/sections*'
+                ];
+
+                $isAllowed = false;
+                foreach ($allowedPaths as $path) {
+                    if ($request->is($path)) {
+                        $isAllowed = true;
+                        break;
+                    }
+                }
+
+                if (!$isAllowed) {
+                    return redirect('/dashboard')->withErrors(['message' => 'Facilitators only have access to Dashboard, Students, and Sections.']);
+                }
+            } elseif ($userRole === 'admin') {
+                // Admin can access everything except Access Management
+                if ($request->is('admin/accessmanagement*') || $request->is('admin/users/*')) {
+                    return redirect('/dashboard')->withErrors(['message' => 'Admins do not have access to Access Management.']);
+                }
+            }
+            // super_admin has no restrictions
         }
 
         return $next($request);

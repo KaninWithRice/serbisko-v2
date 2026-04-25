@@ -7,7 +7,7 @@
                 <li><a href="{{ route('admin.students') }}" class="text-[16px] font-medium text-gray-500 hover:text-[#00923F] transition-colors">Students</a></li>
                 <li class="flex text-[16px] font-bold text-[#00923F]">
                     <span class="mx-2 text-gray-400 select-none">></span>
-                    <span>{{ $student->first_name }} {{ $student->last_name }} {{ $student->extension_name ? $student->extension_name : '' }}'s Profile</span>
+                    <span>{{ $student->first_name }} {{ $student->last_name }} {{ $student->extension_name ? $student->extension_name : '' }}'s Enroll</span>
                 </li>
             </ol>
         </nav>
@@ -29,7 +29,7 @@
     async runAutomation() {
         try {
             this.isAutomating = true;
-            this.automationStatus = 'Gathering profile data...';
+            this.automationStatus = 'Gathering enrollment data...';
             this.automationColor = 'text-[#00923F]';
 
             // 1. Determine the Section Name
@@ -83,21 +83,34 @@
             };
             
             console.log('Final Data Packet Ready:', this.studentData);
+            
+            // Determine Service URL
+            const hostname = window.location.hostname;
+            const serviceUrl = `http://${hostname}:5002/fill-enrollment`;
+            
+            console.log(`[DEBUG] Attempting to fetch: ${serviceUrl}`);
             this.automationStatus = 'Connecting to automation service...';
 
-            const response = await fetch('http://127.0.0.1:5002/fill-enrollment', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(this.studentData)
-            });
-            
-            const data = await response.json();
+            try {
+                const response = await fetch(serviceUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.studentData)
+                });
+                
+                const data = await response.json();
 
-            if(data.status === 'started') {
-                this.automationStatus = 'Automation Started! Check the Firefox window.';
-                setTimeout(() => { this.isAutomating = false; this.automationStatus = ''; }, 15000);
-            } else {
-                this.automationStatus = 'Error: ' + (data.message || 'Unknown error');
+                if(data.status === 'started') {
+                    this.automationStatus = 'Automation Started! Check the Firefox window.';
+                    setTimeout(() => { this.isAutomating = false; this.automationStatus = ''; }, 15000);
+                } else {
+                    this.automationStatus = 'Error: ' + (data.message || 'Unknown error');
+                    this.automationColor = 'text-red-600';
+                    this.isAutomating = false;
+                }
+            } catch (fetchError) {
+                console.error('[FETCH ERROR]', fetchError);
+                this.automationStatus = `Connection Failed: Ensure automation service is running on port 5002.`;
                 this.automationColor = 'text-red-600';
                 this.isAutomating = false;
             }
@@ -219,14 +232,22 @@ class="p-6 font-['Inter'] tracking-normal space-y-4">
                 </button>
 
                 <button x-show="!editing" type="button" 
-                    :disabled="isAutomating"
+                    :disabled="isAutomating || !{{ $isAllVerified ? 'true' : 'false' }}"
                     @click="runAutomation()"
-                    class="inline-flex items-center px-5 py-2.5 bg-[#00923F] text-white rounded-lg font-semibold shadow-sm hover:bg-[#007a34] transition-colors border border-[#00923F] disabled:bg-gray-400 disabled:border-gray-400">
+                    class="inline-flex items-center px-5 py-2.5 bg-[#00923F] text-white rounded-lg font-semibold shadow-sm hover:bg-[#007a34] transition-colors border border-[#00923F] disabled:bg-gray-400 disabled:border-gray-400 disabled:cursor-not-allowed group relative"
+                    title="{{ !$isAllVerified ? 'Cannot Enroll: Some required documents are not yet verified.' : '' }}">
                     <svg x-show="isAutomating" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span x-text="isAutomating ? 'Running...' : 'Use Profile'"></span>
+                    <span x-text="isAutomating ? 'Running...' : 'Enroll'"></span>
+
+                    @if(!$isAllVerified)
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                            Missing verified documents
+                            <div class="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-gray-900"></div>
+                        </div>
+                    @endif
                 </button>
 
                 <div x-show="automationStatus" 

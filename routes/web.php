@@ -27,6 +27,10 @@ Route::get('/', function () {return view('login');})->name('home');
 Route::get('/login', function () {return view('login');})->name('login');
 Route::post('/login', [AuthController::class, 'login']);
 Route::match(['get', 'post'], '/logout', [AuthController::class, 'logout'])->name('logout');
+
+// First Login Password Change
+Route::get('/first-login', [AuthController::class, 'showFirstLogin'])->name('auth.first-login');
+Route::post('/first-login/update', [AuthController::class, 'forceChangePassword']);
 /*
 |--------------------------------------------------------------------------
 | ADMIN ROUTES (Protected via CheckAdmin)
