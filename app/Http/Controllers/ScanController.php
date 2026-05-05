@@ -62,8 +62,9 @@ class ScanController extends Controller
     /**
      * FUZZY MATCHMAKER (STRICTLY AGAINST DATABASE)
      * Finds the closest LRN in the students table from OCR candidates.
+     * PRIORITIZES the preferred LRN if provided.
      */
-    private function findBestLrnMatch($candidates) {
+    private function findBestLrnMatch($candidates, $preferredLrn = null) {
         if (empty($candidates)) return null;
 
         // Clean and normalize candidates
@@ -71,6 +72,20 @@ class ScanController extends Controller
         $cleanCandidates = array_filter($cleanCandidates, fn($c) => strlen($c) >= 10);
         $cleanCandidates = array_unique($cleanCandidates);
 
+        // 1. High-Priority Check: Does any candidate match the preferred LRN closely?
+        if ($preferredLrn) {
+            $cleanPreferred = preg_replace('/[^0-9]/', '', $preferredLrn);
+            foreach ($cleanCandidates as $cand) {
+                similar_text($cand, $cleanPreferred, $percent);
+                // Require 67% match (approx 8/12 digits) to consider it the same student
+                if ($percent >= 67) {
+                    Log::info("Preferred LRN Match Found (High Priority)", ['lrn' => $preferredLrn, 'percent' => $percent]);
+                    return $preferredLrn;
+                }
+            }
+        }
+
+        // 2. General Database Match (Fallback)
         $allLrns = DB::table('students')->pluck('lrn')->toArray();
         $bestMatch = null;
         $bestScore = 999; 
@@ -90,12 +105,10 @@ class ScanController extends Controller
                 }
 
                 // Calculate a score where prefix matches reduce the "perceived" distance
-                $score = $dist - ($prefixLen * 0.7); // Increased prefix weight
+                $score = $dist - ($prefixLen * 0.7);
 
-                // Acceptance criteria:
-                // 1. Distance is small (<= 6) 
-                // OR 2. Distance is moderate (<= 7) but prefix is very strong (>= 4)
-                if ($dist <= 6 || ($dist <= 7 && $prefixLen >= 4)) {
+                // Acceptance criteria: Strict matching for database fallback
+                if ($dist <= 2 || ($dist <= 3 && $prefixLen >= 4)) {
                     if ($score < $bestScore) {
                         $bestScore = $score;
                         $bestMatch = $dbLrn;
@@ -106,9 +119,7 @@ class ScanController extends Controller
         }
 
         if ($bestMatch) {
-            Log::info("LRN Closest Match Found", ['matched' => $bestMatch, 'score' => $bestScore, 'actual_dist' => $bestDist]);
-        } else {
-            Log::warning("No LRN match found among candidates", ['candidates_count' => count($cleanCandidates)]);
+            Log::info("LRN Closest Match Found in Database", ['matched' => $bestMatch, 'score' => $bestScore]);
         }
 
         return $bestMatch;
@@ -225,27 +236,8 @@ class ScanController extends Controller
                     $candidates = $ocrResult['candidates'] ?? [$ocrResult['lrn'] ?? null];
                     $candidates = array_filter($candidates);
                     
-                    $lrn = null;
-                    
-                    // 1. Check for strong match specifically with the logged-in user's LRN
-                    if ($expectedLrn) {
-                        $cleanExpected = preg_replace('/[^0-9]/', '', $expectedLrn);
-                        foreach ($candidates as $cand) {
-                            $cleanCand = preg_replace('/[^0-9]/', '', $cand);
-                            similar_text($cleanCand, $cleanExpected, $percent);
-                            // Require 85% match (approx 10/12 digits) to consider it the same student
-                            if ($percent >= 85) {
-                                Log::info("Fuzzy Match Success with Logged-in User", ['percent' => $percent, 'lrn' => $expectedLrn]);
-                                $lrn = $expectedLrn;
-                                break;
-                            }
-                        }
-                    }
-
-                    // 2. Fallback to general database match if no direct match found
-                    if (!$lrn) {
-                        $lrn = $this->findBestLrnMatch($candidates);
-                    }
+                    // Unified matching with priority for logged-in user
+                    $lrn = $this->findBestLrnMatch($candidates, $expectedLrn);
                     
                     if ($lrn) DB::table('scans')->where('id', $scanId)->update(['lrn' => $lrn]);
 
