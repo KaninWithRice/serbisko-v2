@@ -126,15 +126,30 @@ def ocr():
                 # --- PASS A: GENERAL (For Name/Keywords) ---
                 results = reader.readtext(rotated, detail=1, paragraph=False)
                 text = " ".join([res[1] for res in results]).lower()
-                clean_blob = text.replace(" ", "")
+                clean_blob = text.replace(" ", "").replace("\n", "")
                 
                 log(f"OCR ({p_name} @ {r_idx*90}°): Read {len(text)} chars.")
                 
                 is_match = False
                 if 'report' in doc_type or 'sf9' in doc_type:
-                    keywords = ['sf9', 'reportcard', 'form9', 'deped', 'republic', 'attendance', 'progress', 'learner', 'schoolform9']
-                    if any(k in clean_blob for k in keywords): is_match = True
-                else: is_match = True 
+                    keywords = ['sf9', 'reportcard', 'form9', 'deped', 'republic', 'attendance', 'progress', 'learner', 'schoolform9', 'guardian', 'rating']
+                    # Require at least 2 keywords for stronger validation if it's SF9
+                    match_count = sum(1 for k in keywords if k in clean_blob)
+                    if match_count >= 2: is_match = True
+                elif 'birth' in doc_type or 'psa' in doc_type:
+                    keywords = ['birth', 'certificate', 'psa', 'nso', 'registry', 'born', 'live', 'republic', 'child', 'mother', 'father']
+                    match_count = sum(1 for k in keywords if k in clean_blob)
+                    if match_count >= 2: is_match = True
+                elif 'enroll' in doc_type:
+                    keywords = ['enrollment', 'form', 'registration', 'basic', 'education', 'learner', 'semester', 'track', 'strand']
+                    match_count = sum(1 for k in keywords if k in clean_blob)
+                    if match_count >= 2: is_match = True
+                elif 'moral' in doc_type:
+                    keywords = ['good', 'moral', 'character', 'conduct', 'recommendation', 'student', 'school']
+                    match_count = sum(1 for k in keywords if k in clean_blob)
+                    if match_count >= 2: is_match = True
+                else:
+                    is_match = True # Fallback for other types
                 
                 if is_match:
                     found_doc = True
@@ -142,32 +157,33 @@ def ocr():
                     all_lrn_candidates.extend(extract_candidates(text))
 
                 # --- PASS B: NUMERIC ONLY (Targeted for handwritten digits) ---
-                # We use allowlist to force shapes to be digits (very effective for handwriting)
                 num_results = reader.readtext(rotated, detail=0, allowlist='0123456789', mag_ratio=1.5)
                 num_text = " ".join(num_results)
                 all_lrn_candidates.extend(extract_candidates(num_text))
             
-            # Optimization: If we find a strong match for the expected LRN, we can stop early
-            if expected_lrn:
+            # Optimization: If we find a VERY strong match for the expected LRN, we can stop early
+            # But ONLY if we also found document keywords
+            if expected_lrn and found_doc:
                 for candidate in all_lrn_candidates:
-                    if difflib.SequenceMatcher(None, expected_lrn, candidate).ratio() >= 0.5:
-                        found_doc = True
+                    if difflib.SequenceMatcher(None, expected_lrn, candidate).ratio() >= 0.85:
                         break
             
             if found_doc and any(len(c) == 12 for c in all_lrn_candidates): break
 
         if not found_doc:
-            return jsonify({'success': False, 'error': f"Document mismatch. Ensure it is an SF9 and well-lit."})
+            return jsonify({'success': False, 'error': f"Document mismatch. Ensure it is a valid {doc_type.replace('_', ' ')} and well-lit."})
 
-        # Name Verification (Only for non-SF9 documents)
+        # --- MANDATORY NAME VERIFICATION ---
+        # All documents (SF9, PSA, etc.) MUST have the student's name.
+        name_verified = fuzzy_match(first_name, best_text) and fuzzy_match(last_name, best_text)
+        if not name_verified:
+            log(f"NAME MISMATCH. Best read snippet: {best_text[:300]}")
+            # If SF9, we can be slightly more lenient if LRN is a perfect match, but generally name should be there.
+            # But let's keep it strict as per user request to not be "fake".
+            return jsonify({'success': False, 'error': f"Name mismatch. Student name '{first_name} {last_name}' not detected on this {doc_type.replace('_', ' ')}."})
+
+        # LRN Processing (Primarily for SF9)
         is_sf9 = 'report' in doc_type or 'sf9' in doc_type
-        if not is_sf9:
-            name_verified = fuzzy_match(first_name, best_text) and fuzzy_match(last_name, best_text)
-            if not name_verified:
-                log(f"NAME MISMATCH. Best read snippet: {best_text[:200]}")
-                return jsonify({'success': False, 'error': f"Name mismatch. Name '{first_name} {last_name}' not found on card."})
-
-        # LRN Processing
         if is_sf9:
             log(f"BEST TEXT EXTRACTED: {best_text[:500]}")
             
@@ -175,17 +191,18 @@ def ocr():
             unique_candidates = list(set(all_lrn_candidates))
             
             best_lrn = None
-            # Prioritize the expected LRN if a 50% match is found
+            # Prioritize the expected LRN if a VERY strong match is found
             if expected_lrn:
                 for candidate in unique_candidates:
-                    if difflib.SequenceMatcher(None, expected_lrn, candidate).ratio() >= 0.5:
-                        log(f"FUZZY MATCH SUCCESS (>=50%): Using expected LRN {expected_lrn} instead of candidate {candidate}")
+                    if difflib.SequenceMatcher(None, expected_lrn, candidate).ratio() >= 0.85:
+                        log(f"FUZZY MATCH SUCCESS (>=85%): Using expected LRN {expected_lrn} instead of candidate {candidate}")
                         best_lrn = expected_lrn
                         break
             
-            # If no fuzzy match to expected_lrn, fall back to standard selection
+            # If no strong match to expected_lrn, fall back to standard selection (closest to 12 digits)
             if not best_lrn and unique_candidates:
-                sorted_candidates = sorted(unique_candidates, key=lambda x: (abs(len(x)-12), x.startswith('000')))
+                # Sort by: how close length is to 12, then if it starts with '000' (common in LRNs)
+                sorted_candidates = sorted(unique_candidates, key=lambda x: (abs(len(x)-12), not x.startswith('000')))
                 best_lrn = sorted_candidates[0]
             
             if best_lrn:
@@ -194,10 +211,10 @@ def ocr():
                     'success': True, 
                     'lrn': best_lrn, 
                     'candidates': unique_candidates,
-                    'message': "SF9 and LRN Verified!"
+                    'message': "Document and LRN Verified!"
                 })
             else:
-                return jsonify({'success': False, 'error': "SF9 found, but 12-digit LRN is unreadable."})
+                return jsonify({'success': False, 'error': "Document found, but 12-digit LRN is unreadable."})
             
         return jsonify({'success': True, 'message': "Document Verified!"})
 

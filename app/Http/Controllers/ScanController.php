@@ -165,7 +165,7 @@ class ScanController extends Controller
             DB::table('kiosk_enrollments')->updateOrInsert(
                 ['student_id' => $studentId],
                 [
-                    'student_lrn' => $expectedLrn, "{$prefix}_path" => $filePath, "{$prefix}_status" => 'pending', "{$prefix}_remarks" => 'Processing...',
+                    "{$prefix}_path" => $filePath, "{$prefix}_status" => 'pending', "{$prefix}_remarks" => 'Processing...',
                     'latest_scan_type' => $docType, 'latest_scan_status' => 'pending', 'latest_scan_remarks' => 'Processing...', 'updated_at' => now()
                 ]
             );
@@ -227,13 +227,14 @@ class ScanController extends Controller
                     
                     $lrn = null;
                     
-                    // 1. Check for 50-60% match specifically with the logged-in user's LRN
+                    // 1. Check for strong match specifically with the logged-in user's LRN
                     if ($expectedLrn) {
                         $cleanExpected = preg_replace('/[^0-9]/', '', $expectedLrn);
                         foreach ($candidates as $cand) {
                             $cleanCand = preg_replace('/[^0-9]/', '', $cand);
                             similar_text($cleanCand, $cleanExpected, $percent);
-                            if ($percent >= 50) {
+                            // Require 85% match (approx 10/12 digits) to consider it the same student
+                            if ($percent >= 85) {
                                 Log::info("Fuzzy Match Success with Logged-in User", ['percent' => $percent, 'lrn' => $expectedLrn]);
                                 $lrn = $expectedLrn;
                                 break;
