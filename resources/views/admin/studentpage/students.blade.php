@@ -54,15 +54,21 @@
 @endsection
 
 <script>
+    let lastUserActionTime = Date.now();
+    let isSortMenuOpen = false;
+
     /**
      * Master function to update the table
      */
-    function updateStudentTable(url) {
+    function updateStudentTable(url, isAutoRefresh = false) {
         // We target the outer wrapper in the main view
         const tableWrapper = document.querySelector('.mt-4');
         if (!tableWrapper) return;
 
-        tableWrapper.style.opacity = '0.5';
+        // Don't show loading state for auto-refresh to keep it seamless
+        if (!isAutoRefresh) {
+            tableWrapper.style.opacity = '0.5';
+        }
 
         fetch(url, {
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -83,6 +89,7 @@
      * Global Tab Switcher
      */
     function switchTab(tabName) {
+        lastUserActionTime = Date.now();
         const url = new URL(window.location.href);
         if (tabName && tabName !== 'All') {
             url.searchParams.set('status', tabName);
@@ -103,6 +110,7 @@
         // 1. Live Search Logic
         if (searchInput) {
             searchInput.addEventListener('input', function() {
+                lastUserActionTime = Date.now();
                 clearTimeout(timeout);
                 timeout = setTimeout(() => {
                     const url = new URL(window.location.href);
@@ -119,16 +127,20 @@
         document.addEventListener('click', function(e) {
             const sortLink = e.target.closest('#sortMenu a');
             if (sortLink) {
+                lastUserActionTime = Date.now();
                 e.preventDefault();
                 const url = new URL(sortLink.href);
                 window.history.pushState({}, '', url);
                 updateStudentTable(url);
+                isSortMenuOpen = false;
+                document.getElementById('sortMenu')?.classList.add('hidden');
             }
         });
 
         // 3. Clear Button Logic
         if (clearBtn) {
             clearBtn.addEventListener('click', function() {
+                lastUserActionTime = Date.now();
                 searchInput.value = '';
                 const url = new URL(window.location.href);
                 url.searchParams.delete('search');
@@ -136,12 +148,29 @@
                 updateStudentTable(url);
             });
         }
+
+        // 4. Auto-Refresh Interval
+        // Aggressive polling: Refresh every 3 seconds if idle for 1 second and tab is visible
+        setInterval(() => {
+            const idleTime = Date.now() - lastUserActionTime;
+            const isTabVisible = !document.hidden;
+            const searchInput = document.getElementById('studentSearchInput');
+            const isSearching = searchInput && searchInput.value.trim().length > 0;
+
+            if (idleTime > 1000 && isTabVisible && !isSearching && !isSortMenuOpen) {
+                updateStudentTable(window.location.href, true);
+            }
+        }, 3000);
     });
 
     // Helper for the dropdown toggle (keep this global)
     function toggleSortMenu() {
         const menu = document.getElementById('sortMenu');
-        if (menu) menu.classList.toggle('hidden');
+        if (menu) {
+            isSortMenuOpen = !menu.classList.contains('hidden');
+            menu.classList.toggle('hidden');
+            isSortMenuOpen = !menu.classList.contains('hidden');
+        }
     }
 
 
@@ -151,6 +180,7 @@
      * @param {string} value - The value from the select dropdown
      */
     function applyFilter(param, value) {
+        lastUserActionTime = Date.now();
         const url = new URL(window.location.href);
 
         if (value) {

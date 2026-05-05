@@ -341,6 +341,35 @@ if (fs.existsSync(envPath)) {
 
 let unsubscribe = null;
 
+/**
+ * Performs a "sweep" of all pending (isSynced: false) documents.
+ * This acts as a robust fallback to ensure nothing is missed if the 
+ * real-time listener was offline or encountered a transient error.
+ */
+async function syncSweep() {
+  console.log('🧹 [SWEEP] Refreshing sync for all pending documents...');
+  try {
+    const snap = await db.collection('responses')
+      .where('isSynced', '==', false)
+      .get();
+    
+    if (snap.empty) {
+      console.log('✨ [SWEEP] No pending documents found.');
+      return;
+    }
+
+    console.log(`📦 [SWEEP] Found ${snap.size} pending documents. Processing...`);
+    for (const doc of snap.docs) {
+      await processDocument(doc.id, doc.data()).catch(err => {
+        console.error(`❌ [SWEEP ERROR] Failed to process ${doc.id}:`, err.message);
+      });
+    }
+    console.log('✅ [SWEEP] Completed.');
+  } catch (err) {
+    console.error('❌ [SWEEP ERROR] Sweep failed:', err.message);
+  }
+}
+
 function startSync() {
   if (unsubscribe) {
     console.log('🔄 [SYNC] Restarting Firestore listener...');
@@ -350,7 +379,16 @@ function startSync() {
   unsubscribe = db.collection('responses')
     .where('isSynced', '==', false)
     .onSnapshot(async (snap) => {
-      for (const change of snap.docChanges()) {
+      // Logic for "refresh when new data added"
+      const docChanges = snap.docChanges();
+      if (docChanges.length > 0) {
+        const addedCount = docChanges.filter(c => c.type === 'added').length;
+        if (addedCount > 0) {
+          console.log(`🆕 [SYNC] Refreshing: ${addedCount} new submissions detected.`);
+        }
+      }
+
+      for (const change of docChanges) {
         if (change.type === 'added' || change.type === 'modified') {
           try {
             await processDocument(change.doc.id, change.doc.data());
@@ -368,3 +406,6 @@ function startSync() {
 
 // Initial start
 startSync();
+
+// Robust fallback: Run a sweep every 30 minutes to ensure total consistency
+setInterval(syncSweep, 30 * 60 * 1000);
