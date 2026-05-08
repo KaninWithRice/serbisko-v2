@@ -147,6 +147,7 @@ class EnrollmentController extends Controller
             return [
                 'Report Card (SF9)' => 'sf9',
                 'PSA Birth Certificate' => 'psa',
+                'Affidavit of Undertaking' => 'affidavit',
                 'Enrollment Form' => 'enroll_form'
             ];
         } else {
