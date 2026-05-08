@@ -95,6 +95,14 @@
             </p>
             
             <div class="flex flex-col items-center gap-2">
+                <button type="button" onclick="openEmailModal()" class="no-print w-full py-4 bg-[#005288] hover:bg-[#003d66] text-white rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                    SEND TO E-MAIL
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                    </svg>
+                </button>
+
                 <a href="/logout" class="no-print w-full py-4 bg-[#00923F] hover:bg-[#007a35] text-white rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2">
                     DONE
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -106,6 +114,43 @@
                     Redirecting to login in <span id="timer">180</span> seconds...
                 </p>
             </div>
+        </div>
+    </div>
+
+    <!-- Email Modal -->
+    <div id="emailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden no-print">
+        <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl transform transition-all">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-extrabold text-gray-900">Send Digital Receipt</h3>
+                <button onclick="closeEmailModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <p class="text-gray-600 mb-6 text-sm">
+                Enter your email address below to receive a digital copy of your enrollment receipt.
+            </p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] uppercase tracking-widest text-gray-400 font-bold mb-1">Email Address</label>
+                    <input type="email" id="emailInput" class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#00923F] focus:ring-2 focus:ring-[#00923F]/20 outline-none transition-all" placeholder="your@email.com">
+                </div>
+                
+                <button id="sendEmailBtn" onclick="sendEmail()" class="w-full py-4 bg-[#00923F] hover:bg-[#007a35] text-white rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2">
+                    <span>SEND RECEIPT</span>
+                    <div id="loadingSpinner" class="hidden">
+                        <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                </button>
+            </div>
+            
+            <div id="emailMessage" class="mt-4 text-sm text-center hidden"></div>
         </div>
     </div>
 
@@ -125,6 +170,65 @@
                 window.location.href = '/logout';
             }
         }, 1000);
+
+        function openEmailModal() {
+            document.getElementById('emailModal').classList.remove('hidden');
+            document.getElementById('emailInput').focus();
+        }
+
+        function closeEmailModal() {
+            document.getElementById('emailModal').classList.add('hidden');
+        }
+
+        async function sendEmail() {
+            const email = document.getElementById('emailInput').value;
+            const btn = document.getElementById('sendEmailBtn');
+            const spinner = document.getElementById('loadingSpinner');
+            const message = document.getElementById('emailMessage');
+            
+            if (!email || !email.includes('@')) {
+                message.textContent = "Please enter a valid email address.";
+                message.className = "mt-4 text-sm text-center text-red-600";
+                message.classList.remove('hidden');
+                return;
+            }
+
+            // Disable button and show spinner
+            btn.disabled = true;
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+            spinner.classList.remove('hidden');
+            message.classList.add('hidden');
+
+            try {
+                const response = await fetch('/student/send-receipt-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    message.textContent = result.message;
+                    message.className = "mt-4 text-sm text-center text-green-600 font-bold";
+                    setTimeout(() => closeEmailModal(), 2000);
+                } else {
+                    message.textContent = result.message;
+                    message.className = "mt-4 text-sm text-center text-red-600";
+                }
+            } catch (error) {
+                message.textContent = "An error occurred. Please try again.";
+                message.className = "mt-4 text-sm text-center text-red-600";
+            } finally {
+                message.classList.remove('hidden');
+                btn.disabled = false;
+                btn.classList.remove('opacity-70', 'cursor-not-allowed');
+                spinner.classList.add('hidden');
+            }
+        }
     </script>
 </body>
 </html>

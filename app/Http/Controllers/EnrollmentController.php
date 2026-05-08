@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use App\Models\Student;
+use App\Mail\ReceiptMail;
 
 class EnrollmentController extends Controller
 {
@@ -18,6 +20,37 @@ class EnrollmentController extends Controller
     private function getStudent($userId) {
         if (!$userId) return null;
         return Student::where('user_id', $userId)->first();
+    }
+
+    public function sendReceiptEmail(Request $request) {
+        $request->validate([
+            'email' => 'required|email'
+        ]);
+
+        $userId = Auth::id();
+        if (!$userId) {
+            return response()->json(['success' => false, 'message' => 'Session expired.'], 401);
+        }
+
+        $student = $this->getStudent($userId);
+        if (!$student) {
+            return response()->json(['success' => false, 'message' => 'Student record not found.'], 404);
+        }
+
+        $enrollment = DB::table('kiosk_enrollments')->where('student_id', $student->id)->first();
+        if (!$enrollment || !$enrollment->receipt_number) {
+            return response()->json(['success' => false, 'message' => 'No completed enrollment found.'], 404);
+        }
+
+        $user = Auth::user();
+
+        try {
+            Mail::to($request->email)->send(new ReceiptMail($user, $student, $enrollment));
+            return response()->json(['success' => true, 'message' => 'Receipt sent successfully!']);
+        } catch (\Exception $e) {
+            Log::error("Failed to send receipt email: " . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Failed to send email. Please check your SMTP configuration.'], 500);
+        }
     }
 
     public function saveGrade(Request $request) {

@@ -173,6 +173,7 @@ Route::get('/student/mismatch', function () {
 });
 
 Route::get('/student/thankyou', [EnrollmentController::class, 'showThankYou']);
+Route::post('/student/send-receipt-email', [EnrollmentController::class, 'sendReceiptEmail']);
 
 // ==========================================
 // PYTHON WEBHOOKS (CSRF Exempt)
