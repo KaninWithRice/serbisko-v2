@@ -15,7 +15,7 @@ class SuperAdminSeeder extends Seeder
             'first_name'     => 'super',
             'middle_name'    => 'super',
             'last_name'      => 'super',
-            'birthday'       => '0202-02-02',
+            'birthday'       => '2002-02-02',
             'role'           => 'super_admin',
             'password'       => 'password',
         ]);
@@ -25,7 +25,7 @@ class SuperAdminSeeder extends Seeder
             'first_name'     => 'admin',
             'middle_name'    => 'admin',
             'last_name'      => 'admin',
-            'birthday'       => '0202-02-02',
+            'birthday'       => '2002-02-02',
             'role'           => 'admin',
             'password'       => 'password',
         ]);
@@ -35,7 +35,7 @@ class SuperAdminSeeder extends Seeder
             'first_name'     => 'faci',
             'middle_name'    => 'faci',
             'last_name'      => 'faci',
-            'birthday'       => '0202-02-02',
+            'birthday'       => '2002-02-02',
             'role'           => 'facilitator',
             'password'       => 'password',
         ]);

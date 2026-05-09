@@ -13,18 +13,23 @@ class StudentController extends Controller
 {
     public function students(Request $request)
     {
-        // Fetch the Global Active Year from the latest CustomForm model
-        $settings = \App\Models\CustomForm::latest()->first();
-        $activeSY = $settings ? $settings->school_year : '2025-2026';
+        // Fetch the Global Active Year from the central source
+        $activeSY = \App\Models\Student::activeYear();
 
         // Allow manual override via request (for viewing old archives)
         $selectedYear = $request->get('school_year', $activeSY);
 
+        $latestPre = \App\Models\Student::latestPreEnrollmentIds();
+
         $query = DB::table('users')
-            ->join('students', 'users.id', '=', 'students.user_id')
+            ->join('students', function($join) use ($selectedYear) {
+                $join->on('users.id', '=', 'students.user_id')
+                     ->where('students.school_year', '=', $selectedYear);
+            })
             ->whereNull('users.deleted_at')
             ->where('users.role', 'student')
-            ->leftJoin('pre_enrollments', 'students.id', '=', 'pre_enrollments.student_id')
+            ->leftJoinSub($latestPre, 'lp', 'students.id', '=', 'lp.student_id')
+            ->leftJoin('pre_enrollments', 'lp.latest_id', '=', 'pre_enrollments.id')
             ->leftJoin('kiosk_enrollments', 'students.id', '=', 'kiosk_enrollments.student_id')
             ->select(
                 'students.lrn as id', // ALIAS LRN AS ID FOR BLADE VIEW COMPATIBILITY
@@ -33,10 +38,13 @@ class StudentController extends Controller
                 'users.created_at', 'users.id as user_primary_id',
                 'users.extension_name',
                 'pre_enrollments.responses', 
-                'kiosk_enrollments.grade_level as kiosk_grade',
-                'kiosk_enrollments.track as kiosk_track',
-                'kiosk_enrollments.cluster as kiosk_cluster',
+                // DATA FALLBACK LOGIC: 1. Kiosk Table -> 2. Pre-Enrollment JSON
+                DB::raw("COALESCE(kiosk_enrollments.grade_level, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level'))) as display_grade"),
+                DB::raw("COALESCE(kiosk_enrollments.track, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.track'))) as display_track"),
+                DB::raw("COALESCE(kiosk_enrollments.cluster, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.cluster'))) as display_cluster"),
+                DB::raw("COALESCE(kiosk_enrollments.academic_status, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.academic_status'))) as display_status"),
                 'kiosk_enrollments.academic_status as kiosk_status',
+                'kiosk_enrollments.grade_level as kiosk_grade',
                 'kiosk_enrollments.receipt_number'
             );
 
@@ -52,31 +60,20 @@ class StudentController extends Controller
         }
 
         $filters = [
-            'student_type' => ['kiosk' => 'kiosk_enrollments.academic_status', 'json' => 'Academic Status'],
-            'grade_level'  => ['kiosk' => 'kiosk_enrollments.grade_level',     'json' => 'Grade Level to Enroll'],
-            'track'        => ['kiosk' => 'kiosk_enrollments.track',           'json' => 'Track'],
-            'cluster'      => ['kiosk' => 'kiosk_enrollments.cluster',         'json' => 'Cluster of Electives']
-        ];
-
-        $fullClusterNames = [
-            'STEM'    => 'Science, Technology, Engineering, and Mathematics (STEM)',
-            'BE'      => 'Business and Entrepreneurship (BE)',
-            'ASSH'    => 'Arts, Social Sciences, and Humanities (ASSH)',
-            'TechPro' => 'Technical-Vocational-Livelihood (TVL)'
+            'student_type' => ['kiosk' => 'kiosk_enrollments.academic_status', 'json' => 'academic_status'],
+            'grade_level'  => ['kiosk' => 'kiosk_enrollments.grade_level',     'json' => 'grade_level'],
+            'track'        => ['kiosk' => 'kiosk_enrollments.track',           'json' => 'track'],
+            'cluster'      => ['kiosk' => 'kiosk_enrollments.cluster',         'json' => 'cluster']
         ];
 
         foreach ($filters as $requestKey => $keys) {
             if ($request->filled($requestKey)) {
                 $val = $request->$requestKey;
-                $query->where(function($q) use ($keys, $val, $requestKey, $fullClusterNames) {
+                $query->where(function($q) use ($keys, $val) {
                     $q->where($keys['kiosk'], '=', $val);
-                    $q->orWhere(function($sq) use ($keys, $val, $requestKey, $fullClusterNames) {
-                        $searchString = ($requestKey === 'cluster' && isset($fullClusterNames[$val])) 
-                            ? $fullClusterNames[$val] 
-                            : $val;
-
+                    $q->orWhere(function($sq) use ($keys, $val) {
                         $sq->whereNull($keys['kiosk'])
-                        ->where('pre_enrollments.responses', 'like', '%"' . $keys['json'] . '":"' . $searchString . '"%');
+                        ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.{$keys['json']}')) LIKE ?", ["%{$val}%"]);
                     });
                 });
             }
@@ -85,11 +82,13 @@ class StudentController extends Controller
         if ($request->filled('status')) {
             $status = $request->status;
             if ($status === 'Registered') {
-                $query->whereNull('kiosk_enrollments.grade_level');
+                $query->whereNull('kiosk_enrollments.grade_level')
+                      ->whereNull(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level'))"));
             } elseif ($status === 'Partial Compliance') {
-                $query->whereNotNull('kiosk_enrollments.grade_level')
-                      ->where('kiosk_enrollments.academic_status', '!=', 'Enrolled');
-                // Note: More precise logic for Partial vs For Enrollment would need count of verified docs
+                $query->where(function($q) {
+                    $q->whereNotNull('kiosk_enrollments.grade_level')
+                      ->orWhereNotNull(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level'))"));
+                })->where('kiosk_enrollments.academic_status', '!=', 'Enrolled');
             } elseif ($status === 'Enrolled') {
                 $query->where('kiosk_enrollments.academic_status', 'Enrolled');
             }
@@ -106,39 +105,39 @@ class StudentController extends Controller
         }
 
         $students = $query->get()->map(function($student) {
-            $raw = json_decode($student->responses, true) ?? [];
-            $details = [];
-            // This helps catch keys even with accidental leading/trailing spaces
-            foreach ($raw as $key => $value) {
-                $details[trim($key)] = $value;
-            }
-
-            // Check multiple possible key names from Google Forms
-            $jsonCluster = $details['Cluster of Electives'] 
-                        ?? $details['Cluster'] 
-                        ?? $details['Elective Cluster'] 
-                        ?? '—';
-
             $acronyms = [
-                'Science, Technology, Engineering, and Mathematics (STEM)' => 'STEM',
-                'Business and Entrepreneurship (BE)' => 'BE',
-                'Arts, Social Sciences, and Humanities (ASSH)' => 'ASSH',
-                'Technical-Vocational-Livelihood (TVL)' => 'TechPro',
-                'STEM' => 'STEM', // Add short versions just in case
-                'BE' => 'BE',
+                'STEM' => 'STEM',
+                'BE'   => 'BE',
                 'ASSH' => 'ASSH',
-                'TVL' => 'TechPro'
+                'TVL'  => 'TechPro',
+                'CSS'  => 'CSS',
+                'VGD'  => 'VGD',
+                'EIM'  => 'EIM',
+                'EPAS' => 'EPAS'
             ];
 
             // Helper to ensure we get a string even if the value is an array
             $asString = function($val) {
-                return is_array($val) ? implode(', ', $val) : $val;
+                return is_array($val) ? implode(', ', $val) : (string) ($val ?? '—');
             };
 
-            $student->display_grade   = $asString($student->kiosk_grade   ?? ($details['Grade Level to Enroll'] ?? '—'));
-            $student->display_track   = $asString($student->kiosk_track   ?? ($details['Track'] ?? '—'));
-            $student->display_status  = $asString(($details['Academic Status'] ?? null) ?? ($student->kiosk_status ?? '—'));
-            $student->display_cluster = $asString($student->kiosk_cluster ?? ($acronyms[$asString($jsonCluster)] ?? $jsonCluster));
+            $student->display_grade   = $asString($student->display_grade);
+            $student->display_track   = $asString($student->display_track);
+            $student->display_status  = $asString($student->display_status);
+            
+            // Extract abbreviation from cluster string if it's from JSON
+            $rawCluster = $asString($student->display_cluster);
+            $mappedCluster = '—';
+            if ($rawCluster !== '—') {
+                $mappedCluster = $rawCluster;
+                foreach ($acronyms as $key => $target) {
+                    if (str_contains($rawCluster, $key)) {
+                        $mappedCluster = $target;
+                        break;
+                    }
+                }
+            }
+            $student->display_cluster = $mappedCluster;
 
             // Check verified scans for this student (using lrn or user_id)
             $verifiedCount = DB::table('scans')
@@ -153,9 +152,9 @@ class StudentController extends Controller
             $academicStatus = strtolower($student->display_status);
             $requiredDocsCount = 3; // Regular default
             if (str_contains($academicStatus, 'als')) {
-                $requiredDocsCount = 3; // Updated requirement (ALS: Rating, Form, PSA)
+                $requiredDocsCount = 3;
             } elseif (str_contains($academicStatus, 'feree') || str_contains($academicStatus, 'balik')) {
-                $requiredDocsCount = 3; // Updated requirement (Transferee: SF9, PSA, Form)
+                $requiredDocsCount = 3;
             }
 
             // Requirement Status Alignment
@@ -177,7 +176,7 @@ class StudentController extends Controller
             } elseif ($student->requirement_display === 'Complete') {
                 $student->enrollment_category = 'For Enrollment';
                 $student->status_style = 'bg-[#005288] text-white border-blue-900';
-            } elseif (!empty($student->kiosk_grade)) {
+            } elseif ($student->kiosk_grade !== null) {
                 $student->enrollment_category = 'Partial Compliance';
                 $student->status_style = 'bg-[#00923F] text-white border-green-200';
             } else {
@@ -195,10 +194,15 @@ class StudentController extends Controller
     // 3. STUDENT PROFILE LOGIC
     public function profilepage($id)
     {
+        $activeSY = \App\Models\Student::activeYear();
+        $latestPre = \App\Models\Student::latestPreEnrollmentIds();
+
         // 1. Fetch the student - Using lrn as the identifier ($id)
         $student = DB::table('students')
             ->join('users', 'students.user_id', '=', 'users.id')
-            ->leftJoin('pre_enrollments', 'students.id', '=', 'pre_enrollments.student_id')
+            ->where('students.school_year', $activeSY)
+            ->leftJoinSub($latestPre, 'lp', 'students.id', '=', 'lp.student_id')
+            ->leftJoin('pre_enrollments', 'lp.latest_id', '=', 'pre_enrollments.id')
             ->leftJoin('kiosk_enrollments', 'students.id', '=', 'kiosk_enrollments.student_id') 
             ->leftJoin('sections', 'students.section_id', '=', 'sections.id')
             ->select([
@@ -207,9 +211,11 @@ class StudentController extends Controller
                 'sections.name as section_name',
                 'users.first_name', 'users.last_name', 'users.extension_name', 'users.middle_name', 'users.birthday', 
                 'pre_enrollments.responses',
-                'kiosk_enrollments.grade_level as kiosk_grade', 
-                'kiosk_enrollments.track as kiosk_track',
-                'kiosk_enrollments.cluster as kiosk_cluster', 
+                // FALLBACK LOGIC
+                DB::raw("COALESCE(kiosk_enrollments.grade_level, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level'))) as final_grade"),
+                DB::raw("COALESCE(kiosk_enrollments.track, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.track'))) as final_track"),
+                DB::raw("COALESCE(kiosk_enrollments.cluster, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.cluster'))) as final_cluster"),
+                DB::raw("COALESCE(kiosk_enrollments.academic_status, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.academic_status'))) as final_status"),
                 'kiosk_enrollments.academic_status as kiosk_status'
             ])
             ->where('students.lrn', $id)
@@ -225,25 +231,15 @@ class StudentController extends Controller
             $details[strtolower(trim($key))] = $value;
         }
 
-        // 3. Mapping Logic
-        $getMappedValue = function($aliases) use ($details) {
-            foreach ($aliases as $alias) {
-                if (isset($details[strtolower($alias)])) {
-                    return $details[strtolower($alias)];
-                }
-            }
-            return null;
-        };
-
-        $finalGrade   = $student->kiosk_grade   ?? ($getMappedValue(['Grade Level to Enroll', 'grade']) ?? '—');
-        $finalTrack   = $student->kiosk_track   ?? ($getMappedValue(['Track']) ?? '—');
-        $finalStatus  = $student->kiosk_status  ?? ($getMappedValue(['Academic Status']) ?? '—');
-        $finalCluster = $student->kiosk_cluster ?? ($getMappedValue(['Cluster of Electives', 'cluster', 'elective cluster']) ?? '—');
+        $finalGrade   = $student->final_grade   ?? '—';
+        $finalTrack   = $student->final_track   ?? '—';
+        $finalStatus  = $student->final_status  ?? '—';
+        $finalCluster = $student->final_cluster ?? '—';
 
         $fixedKeys = [
             'first name', 'given name', 'fname', 'pangalan', 'last name', 'surname', 'family name', 'apelyido',
             'middle name', 'mname', 'extension name', 'ext', 'suffix', 'birthday', 'date of birth', 'dob',
-            'grade level to enroll', 'track', 'cluster of electives', 'academic status', 'timestamp'
+            'grade_level', 'track', 'cluster', 'academic_status', 'timestamp'
         ];
 
         $dynamicDetails = [];
@@ -281,11 +277,11 @@ class StudentController extends Controller
 
         // 5. Fetch Sections data for the profile
         $academicYears = \App\Models\Section::distinct()->pluck('academic_year')->toArray();
-        $settings = \App\Models\CustomForm::latest()->first();
-        $activeSY = $settings ? $settings->school_year : '2025-2026';
+        $activeSY = \App\Models\Student::activeYear();
         if (!in_array($activeSY, $academicYears)) {
             $academicYears[] = $activeSY;
         }
+
         sort($academicYears);
 
         return view('admin.studentpage.profilepage', compact(

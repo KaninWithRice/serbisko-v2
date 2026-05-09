@@ -96,7 +96,33 @@ class FormBuilderController extends Controller
         return [
             'questions'                => 'required|array|min:1',
             'questions.*.label'        => 'required|string|max:255',
-            'questions.*.field_id'     => ['required', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/'],
+            'questions.*.field_id'     => [
+                'required', 
+                'string', 
+                'max:60', 
+                'regex:/^[a-z0-9_]+$/',
+                function ($attribute, $value, $fail) {
+                    $reserved = ['grade_level', 'track', 'cluster', 'academic_status'];
+                    if (in_array($value, $reserved)) {
+                        // Get the label to see if it matches the intended purpose (basic check)
+                        $index = explode('.', $attribute)[1];
+                        $label = request()->input("questions.{$index}.label");
+                        
+                        // If label doesn't contain a reasonable hint of the reserved field's purpose, fail it.
+                        // This prevents admins from using 'cluster' for 'Favorite Color'.
+                        $purposeMap = [
+                            'grade_level'     => 'Grade Level',
+                            'track'           => 'Track',
+                            'cluster'         => 'Cluster',
+                            'academic_status' => 'Status'
+                        ];
+
+                        if (!str_contains(strtolower($label), strtolower($purposeMap[$value]))) {
+                            $fail("The Field ID '{$value}' is reserved for system-critical data. Please use a different ID.");
+                        }
+                    }
+                }
+            ],
             'questions.*.type'         => 'required|in:text,number,date,dropdown,radio,checkbox,section',
             'questions.*.required'     => 'boolean',
             'questions.*.validation'   => 'required|in:none,numeric_only,lrn_format',

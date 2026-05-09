@@ -16,10 +16,20 @@ class CustomForm extends Model
         'school_year',
         'schema',
         'firestore_doc_id',
-        'share_token',
+        'share_token'
     ];
 
+    /**
+     * Clear cache on change to ensure active school year propagates immediately.
+     */
+    protected static function booted()
+    {
+        static::saved(fn () => \Illuminate\Support\Facades\Cache::forget('active_school_year'));
+        static::deleted(fn () => \Illuminate\Support\Facades\Cache::forget('active_school_year'));
+    }
+
     protected $casts = [
+
         'schema' => 'array',
     ];
 

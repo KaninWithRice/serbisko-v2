@@ -12,10 +12,10 @@ class SectionController extends Controller
 {
     public function index()
     {
-        $settings = CustomForm::latest()->first();
-        $activeSY = $settings ? $settings->school_year : '2025-2026';
-        
+        $activeSY = \App\Models\Student::activeYear();
+
         $sections = Section::orderBy('academic_year', 'desc')
+
             ->orderBy('grade_level', 'asc')
             ->orderBy('name', 'asc')
             ->get();

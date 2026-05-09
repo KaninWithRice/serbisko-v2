@@ -12,17 +12,18 @@ class DashboardController extends Controller
 {
     public function index(Request $request) 
     {
-        $settings = DB::table('system_settings')->first();
+        $activeSY = \App\Models\Student::activeYear();
         $grade = $request->grade_level;
 
-        // Reusable filter - REMOVED school_year as it doesn't exist in students table in DB
+        // Reusable filter
         $applyFilter = function($query) use ($grade) {
             if (!empty($grade)) {
                 $query->where(function($q) use ($grade) {
+                    // FALLBACK LOGIC: 1. Kiosk -> 2. Pre-Enrollment JSON
                     $q->where('kiosk_enrollments.grade_level', '=', $grade)
                     ->orWhere(function($sq) use ($grade) {
                         $sq->whereNull('kiosk_enrollments.grade_level')
-                            ->where('pre_enrollments.responses', 'like', '%"Grade Level to Enroll":"' . $grade . '"%');
+                            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level')) = ?", [$grade]);
                     });
                 });
             }
@@ -30,14 +31,18 @@ class DashboardController extends Controller
         };
 
         // --- Core Enrollment Stats ---
-        // Joined using actual DB columns (students.id, students.user_id)
+        // Joined using subquery to get ONLY the latest pre_enrollment version
+        $latestPre = \App\Models\Student::latestPreEnrollmentIds();
+
         $baseQuery = DB::table('students')
             ->join('users', 'students.user_id', '=', 'users.id') 
             ->whereNull('users.deleted_at')
-            ->leftJoin('pre_enrollments', 'students.id', '=', 'pre_enrollments.student_id')
+            ->where('students.school_year', $activeSY)
+            ->leftJoinSub($latestPre, 'lp', 'students.id', '=', 'lp.student_id')
+            ->leftJoin('pre_enrollments', 'lp.latest_id', '=', 'pre_enrollments.id')
             ->leftJoin('kiosk_enrollments', 'students.id', '=', 'kiosk_enrollments.student_id');
 
-        $totalRegistrations = $applyFilter(clone $baseQuery)->count('students.lrn');
+        $totalRegistrations = $applyFilter(clone $baseQuery)->count('students.id');
 
         $totalSubmissions = $applyFilter(clone $baseQuery)
             ->whereNotNull('kiosk_enrollments.student_id')
@@ -53,32 +58,65 @@ class DashboardController extends Controller
         $percEnrolled = ($totalEnrolled / $max) * 100;
 
         // --- Elective Counting ---
-        $rawCounts = DB::table('kiosk_enrollments')
-            ->join('students', 'kiosk_enrollments.student_id', '=', 'students.id')
+        $categories = [
+            'ASSH' => 'Arts, Social Sciences & Humanities',
+            'BE'   => 'Business & Entrepreneurship',
+            'STEM' => 'Science, Technology, Engineering & Math',
+            'CSS'  => 'Computer System Servicing',
+            'VGD'  => 'Visual Graphics & Design',
+            'EIM'  => 'Electrical Installation & Maintenance',
+            'EPAS' => 'Electronics Product Assembly & Servicing'
+        ];
+
+        // Combined data source for counting with fallback
+        $rawCountsQuery = DB::table('students')
             ->join('users', 'students.user_id', '=', 'users.id')
             ->whereNull('users.deleted_at')
-            ->when(!empty($grade), function($query) use ($grade) {
-                return $query->where('kiosk_enrollments.grade_level', $grade);
-            })
-            ->whereIn('cluster', ['STEM', 'ASSH', 'BE', 'TechPro'])
-            ->select('cluster', DB::raw('count(*) as count'))
-            ->groupBy('cluster')
-            ->pluck('count', 'cluster')
-            ->toArray();
+            ->where('students.school_year', $activeSY)
+            ->leftJoinSub($latestPre, 'lp', 'students.id', '=', 'lp.student_id')
+            ->leftJoin('pre_enrollments', 'lp.latest_id', '=', 'pre_enrollments.id')
+            ->leftJoin('kiosk_enrollments', 'students.id', '=', 'kiosk_enrollments.student_id')
+            ->select(
+                DB::raw("COALESCE(kiosk_enrollments.cluster, JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.cluster'))) as cluster_val")
+            );
 
-        $electiveCounts = [
-            'STEM'    => $rawCounts['STEM'] ?? 0,
-            'ASSH'    => $rawCounts['ASSH'] ?? 0,
-            'BE'      => $rawCounts['BE'] ?? 0,
-            'TechPro' => $rawCounts['TechPro'] ?? 0
-        ];
+        if (!empty($grade)) {
+            $rawCountsQuery = $applyFilter($rawCountsQuery);
+        }
+
+        $rawCountsResults = $rawCountsQuery->get();
+        $rawCounts = [];
+
+        foreach ($rawCountsResults as $row) {
+            $val = trim($row->cluster_val ?? '');
+            if (!$val) continue;
+
+            foreach ($categories as $key => $name) {
+                if (stripos($val, $key) !== false) {
+                    $rawCounts[$key] = ($rawCounts[$key] ?? 0) + 1;
+                    break;
+                }
+            }
+        }
+
+        $electiveCounts = [];
+        foreach ($categories as $key => $name) {
+            if (isset($rawCounts[$key]) && $rawCounts[$key] > 0) {
+                $electiveCounts[$key] = [
+                    'name'  => $name,
+                    'count' => $rawCounts[$key]
+                ];
+            }
+        }
 
         // --- Recent Submissions ---
         $recentKioskSubmissions = DB::table('kiosk_enrollments')
             ->join('students', 'kiosk_enrollments.student_id', '=', 'students.id')
             ->join('users', 'students.user_id', '=', 'users.id')
-            ->leftJoin('pre_enrollments', 'students.id', '=', 'pre_enrollments.student_id')
+            ->leftJoinSub($latestPre, 'lp', 'students.id', '=', 'lp.student_id')
+            ->leftJoin('pre_enrollments', 'lp.latest_id', '=', 'pre_enrollments.id')
             ->whereNull('users.deleted_at')
+            ->where('students.school_year', $activeSY)
             ->select(
                 'students.lrn', 'users.id as user_primary_id',
                 'users.first_name', 'users.middle_name', 'users.last_name',
@@ -127,26 +165,19 @@ class DashboardController extends Controller
             });
 
         // --- Sync & Gradient logic ---
-        $lastSync = DB::table('sync_histories')->where('status', 'Success')->latest()->first();
+        $lastSync = DB::table('sync_histories')
+            ->where('school_year', $activeSY)
+            ->where('status', 'Success')
+            ->latest()
+            ->first();
         $lastSyncTime = $lastSync ? Carbon::parse($lastSync->created_at)->diffForHumans() : 'Never';
-        $activeSY = $settings ? $settings->active_school_year : '2025-2026';
 
-        $totalElectives = array_sum($electiveCounts) ?: 1;
-        $pSTEM = ($electiveCounts['STEM'] / $totalElectives) * 100;
-        $pASSH = ($electiveCounts['ASSH'] / $totalElectives) * 100;
-        $pBE   = ($electiveCounts['BE'] / $totalElectives) * 100;
-        $pTech = ($electiveCounts['TechPro'] / $totalElectives) * 100;
-
-        $stop1 = $pSTEM;
-        $stop2 = $stop1 + $pASSH;
-        $stop3 = $stop2 + $pBE;
-
-        $donutGradient = "conic-gradient(#00568d 0% {$stop1}%, #00897b {$stop1}% {$stop2}%, #1a8a44 {$stop2}% {$stop3}%, #facc15 {$stop3}% 100%)";
+        $totalElectives = array_sum(array_column($electiveCounts, 'count')) ?: 1;
 
         $data = compact(
             'totalRegistrations', 'totalSubmissions', 'totalEnrolled',
             'percVerified', 'percEnrolled', 'electiveCounts',
-            'donutGradient', 'lastSyncTime', 'recentKioskSubmissions', 'activeSY'
+            'lastSyncTime', 'recentKioskSubmissions', 'activeSY'
         );
 
         if ($request->ajax()) {

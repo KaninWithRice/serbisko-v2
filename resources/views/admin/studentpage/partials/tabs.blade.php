@@ -1,4 +1,4 @@
-<div x-data="{ activeTab: '{{ request('status', 'All') }}' }" class="flex justify-between items-end border-b border-gray-400">
+<div x-data="{ activeTab: '{{ request('status', 'All') }}' }" class="flex justify-between items-end pt-3 border-b border-gray-400">
     <div class="flex gap-3">
         @foreach(['All', 'Registered', 'Partial Compliance', 'For Enrollment', 'Enrolled'] as $tab)
             <button 
@@ -10,7 +10,7 @@
         @endforeach
     </div>
 
-    <div class="flex items-center gap-4 pb-3"> {{-- Matches the pb-3 of the tabs for perfect baseline alignment --}}
+    <div class="flex items-center gap-4 pb-3"> 
         
         @php
             $lastSync = DB::table('sync_histories')->where('status', 'Success')->latest()->first();
@@ -21,6 +21,8 @@
                 Last updated: {{ \Carbon\Carbon::parse($lastSync->created_at)->diffForHumans() }}
             </span>
         @endif
+
+        <x-school-year-selector onchange="applyFilter('school_year', year)" />
 
         <div class="flex items-center gap-2">
             {{-- Export Button --}}

@@ -35,11 +35,11 @@
 
     @include('includes.sidebar')
 
-    <div class="flex-1 flex flex-col min-w-0 bg-white shadow-2xl overflow-hidden">
+    <div class="flex-1 flex flex-col min-w-0 bg-white shadow-2xl overflow-visible">
         
         @include('includes.header')
 
-        <main class="px-16 flex-1 overflow-y-auto bg-white">
+        <main class="px-16 flex-1 overflow-y-auto bg-white overflow-visible">
               <div class="max-w-[1600px] mx-auto">
                   @yield('content')
               </div>

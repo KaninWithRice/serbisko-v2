@@ -51,4 +51,41 @@ class Student extends Model
     {
         return $this->hasOne(PreEnrollment::class)->latestOfMany();
     }
+
+    /**
+     * The single source of truth for the active school year.
+     */
+    public static function activeYear()
+    {
+        return \Illuminate\Support\Facades\Cache::remember('active_school_year', 3600, function() {
+            $settings = \App\Models\CustomForm::latest()->first();
+            return $settings ? $settings->school_year : '2025-2026';
+        });
+    }
+
+    /**
+     * Scope to filter by the authoritative active school year.
+     */
+    public function scopeInActiveYear($query, $year = null)
+    {
+        return $query->where('students.school_year', $year ?: static::activeYear());
+    }
+
+    /**
+     * Returns a subquery of the latest pre_enrollment IDs per student.
+     * Useful for joinSub in DB::table queries.
+     */
+    public static function latestPreEnrollmentIds()
+    {
+        // We use a subquery to find the highest submission_version per student,
+        // then take the MAX(id) for that version to ensure a single row per student.
+        return \Illuminate\Support\Facades\DB::table('pre_enrollments')
+            ->select('student_id', \Illuminate\Support\Facades\DB::raw('MAX(id) as latest_id'))
+            ->whereIn(\Illuminate\Support\Facades\DB::raw('(student_id, submission_version)'), function ($query) {
+                $query->select('student_id', \Illuminate\Support\Facades\DB::raw('MAX(submission_version)'))
+                    ->from('pre_enrollments')
+                    ->groupBy('student_id');
+            })
+            ->groupBy('student_id');
+    }
 }
