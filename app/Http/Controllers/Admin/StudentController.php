@@ -81,16 +81,22 @@ class StudentController extends Controller
 
         if ($request->filled('status')) {
             $status = $request->status;
+
             if ($status === 'Registered') {
-                $query->whereNull('kiosk_enrollments.grade_level')
-                      ->whereNull(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level'))"));
+                $query->whereNull('kiosk_enrollments.grade_level');
+
             } elseif ($status === 'Partial Compliance') {
-                $query->where(function($q) {
-                    $q->whereNotNull('kiosk_enrollments.grade_level')
-                      ->orWhereNotNull(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(pre_enrollments.responses, '$.grade_level'))"));
-                })->where('kiosk_enrollments.academic_status', '!=', 'Enrolled');
+                $query->whereNotNull('kiosk_enrollments.grade_level')
+                      ->whereNotIn('kiosk_enrollments.academic_status', ['Enrolled', 'Officially Enrolled'])
+                      ->whereRaw('(SELECT COUNT(*) FROM scans WHERE (scans.lrn = students.lrn OR scans.user_id = users.id) AND scans.status = ?) < 3', ['verified']);
+
+            } elseif ($status === 'For Enrollment') {
+                $query->whereNotNull('kiosk_enrollments.grade_level')
+                      ->whereNotIn('kiosk_enrollments.academic_status', ['Enrolled', 'Officially Enrolled'])
+                      ->whereRaw('(SELECT COUNT(*) FROM scans WHERE (scans.lrn = students.lrn OR scans.user_id = users.id) AND scans.status = ?) >= 3', ['verified']);
+
             } elseif ($status === 'Enrolled') {
-                $query->where('kiosk_enrollments.academic_status', 'Enrolled');
+                $query->whereIn('kiosk_enrollments.academic_status', ['Enrolled', 'Officially Enrolled']);
             }
         }
 
@@ -104,7 +110,7 @@ class StudentController extends Controller
             default: $query->orderBy('users.last_name', 'asc'); break;
         }
 
-        $students = $query->get()->map(function($student) {
+        $students = $query->paginate(10)->through(function($student) {
             $acronyms = [
                 'STEM' => 'STEM',
                 'BE'   => 'BE',

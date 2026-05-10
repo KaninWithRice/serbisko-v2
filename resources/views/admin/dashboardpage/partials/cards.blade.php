@@ -18,7 +18,7 @@
                 {{ number_format($totalSubmissions) }}
             </div>
         </div>
-        <a href="{{ route('admin.students', ['status' => 'Document Verified', 'grade_level' => request('grade_level')]) }}" 
+        <a href="{{ route('admin.students', ['status' => 'For Enrollment', 'grade_level' => request('grade_level')]) }}" 
         class="text-[#00568d] font-bold underline text-md hover:text-[#005288]/50 transition-colors inline-block mt-auto">
             View
         </a>
@@ -32,7 +32,7 @@
                 {{ number_format($totalEnrolled) }}
             </div>
         </div>
-        <a href="{{ route('admin.students', ['status' => 'Officially Enrolled']) }}" 
+        <a href="{{ route('admin.students', ['status' => 'Enrolled']) }}" 
            class="text-[#00568d] font-bold underline text-md hover:text-[#005288]/50 transition-colors inline-block mt-auto">
             View
         </a>

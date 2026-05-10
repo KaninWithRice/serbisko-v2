@@ -16,6 +16,7 @@
                value="{{ request('search') }}"
                placeholder="Search Name or LRN" 
                autocomplete="off"
+               maxlength="25"
                class="w-full bg-[#F1F3F2] border-none rounded-full py-2 pl-5 pr-16 focus:ring-2 focus:ring-[#00923F] outline-none text-sm text-gray-600 placeholder-gray-400 font-regular">
         
         <div class="absolute right-1.5 flex items-center gap-1">
@@ -53,9 +54,13 @@
     </div>
 @endsection
 
+@push('scripts')
 <script>
-    let lastUserActionTime = Date.now();
+    document.body.classList.remove('h-screen', 'overflow-hidden');
+    document.body.classList.add('min-h-screen');
+
     let isSortMenuOpen = false;
+    let lastUserActionTime = Date.now();
 
     /**
      * Master function to update the table
@@ -199,3 +204,4 @@
         updateStudentTable(url);
     }
 </script>
+@endpush

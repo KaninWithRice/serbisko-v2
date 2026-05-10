@@ -78,9 +78,11 @@
                         </div>
 
                         <div class="flex items-center gap-1">
-                            <span class="text-gray-500" x-text="{grade: 'Grade Level', requirements_status: 'Requirement Status', student_type: 'Student Type'}[key] || key.charAt(0).toUpperCase() + key.slice(1)"></span>
+                            <template x-if="!selectedFilters[key]">
+                                <span class="text-gray-500" x-text="{grade: 'Grade Level', requirements_status: 'Requirement Status', student_type: 'Student Type'}[key] || key.charAt(0).toUpperCase() + key.slice(1)"></span>
+                            </template>
                             <template x-if="selectedFilters[key]">
-                                <span class="text-[#005288]" x-text="': ' + selectedFilters[key]"></span>
+                                <span class="text-[#005288]" x-text="selectedFilters[key]"></span>
                             </template>
                         </div>
 
